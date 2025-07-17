@@ -1,4 +1,4 @@
-# VCTTOEXCEL
+# VCFTOEXCEL
 
 Convertisseur de contacts VCF vers Excel — rapide, propre, et optimisé 🇫🇷
 
