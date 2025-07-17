@@ -46,6 +46,8 @@ MIT — Utilisation libre avec mention.
 
 Développé par [foxsalaf](https://github.com/foxsalaf) avec l'aide d'une IA bien câblée.
 
+Merci à **Claude AI** et **ChatGPT** pour le soutien technique et les idées d'optimisation. 🤝
+
 ---
 
 **Simple. Solide. Français.** 🇫🇷
