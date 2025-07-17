@@ -46,7 +46,7 @@ MIT — Utilisation libre avec mention.
 
 ## ✨ Auteur
 
-Développé par [foxsalaf]([https://github.com/foxsalaf](https://www.linkedin.com/in/mouhammad-ahmed/) avec l'aide d'une IA bien câblée.
+Développé par [foxsalaf]([Mouhammad](https://www.linkedin.com/in/mouhammad-ahmed/) avec l'aide d'une IA bien câblée.
 
 Merci à **Claude AI** et **ChatGPT** pour le soutien technique et les idées d'optimisation. 🤝
 
