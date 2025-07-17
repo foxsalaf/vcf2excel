@@ -460,8 +460,9 @@
             for (const line of contactLines) {
                 if (line.toUpperCase().startsWith('FN:')) {
                     info.name = line.substring(3).trim();
-                } else if (line.toUpperCase().startsWith('TEL')) {
-                    const match = line.match(/TEL(?:;TYPE=[^:]+)*:([\d\s\-\+\(\).,]+)/i);
+                } else if (line.toUpperCase().includes('TEL')) {
+                    // Enhanced regex to handle ALL TEL formats including item1.TEL:, TEL;TYPE=CELL:, etc.
+                    const match = line.match(/(?:item\d+\.)?TEL(?:[^:]*)?:([\d\s\-\+\(\).,]+)/i);
                     if (match) {
                         const raw = match[1].trim();
                         const clean = raw.replace(/[\s\-\(\)\.]/g, '');
