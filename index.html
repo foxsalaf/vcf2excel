@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VCF to Excel Converter</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📱</text></svg>">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .title {
+            font-size: 2.5em;
+            font-weight: bold;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .upload-section {
+            margin-bottom: 30px;
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: linear-gradient(45deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: linear-gradient(45deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+            transform: translateY(-2px);
+        }
+
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: linear-gradient(45deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3));
+        }
+
+        .upload-icon {
+            font-size: 3em;
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+
+        .upload-text {
+            font-size: 1.2em;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .upload-subtext {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(45deg, #6c757d, #495057);
+            box-shadow: 0 10px 20px rgba(108, 117, 125, 0.3);
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 15px 30px rgba(108, 117, 125, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            box-shadow: 0 10px 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-success:hover {
+            box-shadow: 0 15px 30px rgba(40, 167, 69, 0.4);
+        }
+
+        .progress-section {
+            margin: 30px 0;
+            display: none;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.2),
+                transparent
+            );
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .stats-section {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(45deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .result-section {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: linear-gradient(45deg, rgba(40, 167, 69, 0.1), rgba(25, 135, 84, 0.1));
+            border-radius: 15px;
+            border: 1px solid rgba(40, 167, 69, 0.2);
+        }
+
+        .success-icon {
+            font-size: 3em;
+            color: #28a745;
+            margin-bottom: 15px;
+        }
+
+        .export-options {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255,255,255,0.8);
+            border-radius: 15px;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+        }
+
+        .export-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+
+        .file-info {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+
+        .file-name {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .file-size {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .warning-section {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            background: linear-gradient(45deg, rgba(255, 193, 7, 0.1), rgba(255, 235, 59, 0.1));
+            border-radius: 10px;
+            border-left: 4px solid #ffc107;
+        }
+
+        .warning-title {
+            font-weight: bold;
+            color: #856404;
+            margin-bottom: 10px;
+        }
+
+        .warning-list {
+            color: #664d03;
+            margin-left: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .title {
+                font-size: 2em;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .export-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .btn {
+                width: 100%;
+                max-width: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="title">📱 VCF to Excel</h1>
+            <p class="subtitle">Convertissez vos contacts VCF en fichier Excel formaté (.xlsx)</p>
+        </header>
+
+        <main>
+            <section class="upload-section">
+                <div class="upload-area" id="uploadArea" role="button" tabindex="0" aria-label="Glissez ou cliquez pour sélectionner un fichier VCF">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">Glissez votre fichier VCF ici</div>
+                    <div class="upload-subtext">ou cliquez pour sélectionner</div>
+                    <input type="file" class="file-input" id="fileInput" accept=".vcf">
+                </div>
+                
+                <div class="file-info" id="fileInfo" style="display: none;">
+                    <div class="file-name" id="fileName"></div>
+                    <div class="file-size" id="fileSize"></div>
+                </div>
+            </section>
+
+            <section class="progress-section" id="progressSection" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div style="text-align: center; color: #666;" id="progressText">Analyse du fichier...</div>
+            </section>
+
+            <section class="stats-section" id="statsSection">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalContacts">0</div>
+                        <div class="stat-label">Contacts total</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="contactsWithPhone">0</div>
+                        <div class="stat-label">Avec téléphone</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalPhones">0</div>
+                        <div class="stat-label">Numéros extraits</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="finalExported">0</div>
+                        <div class="stat-label">Lignes exportées</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="contactsWithoutPhone">0</div>
+                        <div class="stat-label">Sans numéro</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="warning-section" id="warningSection">
+                <div class="warning-title">⚠️ Attention détectée</div>
+                <ul class="warning-list" id="warningList"></ul>
+            </section>
+
+            <section class="result-section" id="resultSection">
+                <div style="text-align: center;">
+                    <div class="success-icon">✅</div>
+                    <h3 style="color: #28a745; margin-bottom: 15px;">Conversion terminée avec succès !</h3>
+                    
+                    <div class="export-options">
+                        <h4 style="margin-bottom: 15px; color: #333;">💾 Choisissez votre option d'export :</h4>
+                        <div class="export-buttons">
+                            <button class="btn" onclick="downloadFile(false)">📥 TOUS les contacts</button>
+                            <button class="btn btn-success" onclick="downloadFile(true)">📞 SEULEMENT avec numéro</button>
+                        </div>
+                        <p style="margin-top: 15px; font-size: 0.9em; color: #666; text-align: center;">
+                            <strong>Tous :</strong> inclut les contacts sans numéro de téléphone<br>
+                            <em>Recommandé : seulement avec numéro pour un carnet téléphonique propre</em>
+                        </p>
+                    </div>
+                    
+                    <button class="btn btn-secondary" onclick="resetApp()">🔄 Nouveau fichier</button>
+                </div>
+            </section>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <button class="btn" id="convertBtn" style="display: none;" onclick="convertFile()">
+                    🔄 Convertir en Excel
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let selectedFile = null;
+        let convertedData = null;
+        let duplicateNumbers = new Set(); // Store numbers that appear multiple times
+        let stats = {
+            totalContacts: 0,
+            contactsWithPhone: 0,
+            contactsWithoutPhone: 0,
+            totalPhoneNumbers: 0,
+            contactsAddedToExcel: 0,
+            duplicatesDetected: 0
+        };
+        let warnings = [];
+
+        /**
+         * Formats a French phone number with spaces.
+         */
+        function formaterNumeroFrancais(numero) {
+            const cleanNumero = numero.replace(/\s/g, '');
+            if (cleanNumero.startsWith('0') && cleanNumero.length === 10) {
+                return `${cleanNumero.slice(0,2)} ${cleanNumero.slice(2,4)} ${cleanNumero.slice(4,6)} ${cleanNumero.slice(6,8)} ${cleanNumero.slice(8)}`;
+            }
+            return numero;
+        }
+
+        /**
+         * Detects the type of phone number (Mobile, Fixe, International, Inconnu).
+         */
+        function detecterTypeNumero(numero) {
+            const cleanNum = numero.replace(/[^\d+]/g, '');
+
+            if (cleanNum.startsWith('+') && !cleanNum.startsWith('+33')) {
+                return "International";
+            }
+            const frenchNum = cleanNum.startsWith('+33') ? '0' + cleanNum.substring(3) : cleanNum;
+
+            if (frenchNum.startsWith('06') || frenchNum.startsWith('07')) {
+                return "Mobile";
+            }
+            if (['01', '02', '03', '04', '05', '09'].some(prefix => frenchNum.startsWith(prefix))) {
+                return "Fixe";
+            }
+            return "Inconnu";
+        }
+
+        /**
+         * Extracts contact information (name, phones) from VCF lines.
+         */
+        function extractContactInfo(contactLines) {
+            const info = { name: '', phones: [] };
+            
+            for (const line of contactLines) {
+                if (line.toUpperCase().startsWith('FN:')) {
+                    info.name = line.substring(3).trim();
+                } else if (line.toUpperCase().includes('TEL')) {
+                    // Enhanced regex to handle ALL TEL formats including item1.TEL:, TEL;TYPE=CELL:, etc.
+                    const match = line.match(/(?:item\d+\.)?TEL(?:[^:]*)?:([\d\s\-\+\(\).,]+)/i);
+                    if (match) {
+                        const raw = match[1].trim();
+                        const clean = raw.replace(/[\s\-\(\)\.]/g, '');
+                        if (/^[\+]?[\d]{4,}$/.test(clean)) {
+                            info.phones.push(clean);
+                        }
+                    }
+                }
+            }
+            
+            return info;
+        }
+
+        /**
+         * Parses VCF content into individual contact blocks.
+         */
+        function parseVCFContacts(lines) {
+            const contacts = [];
+            let current = [];
+            let inVcard = false;
+            
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('BEGIN:VCARD')) {
+                    current = [trimmed];
+                    inVcard = true;
+                } else if (trimmed.startsWith('END:VCARD')) {
+                    current.push(trimmed);
+                    if (inVcard) {
+                        contacts.push(current);
+                    }
+                    current = [];
+                    inVcard = false;
+                } else if (inVcard) {
+                    current.push(trimmed);
+                }
+            }
+            
+            return contacts;
+        }
+
+        /**
+         * Processes the VCF file content to extract and format contact data for Excel.
+         */
+        function processVCFFile(content) {
+            const lines = content.split('\n');
+            const contacts = parseVCFContacts(lines);
+            
+            stats.totalContacts = contacts.length;
+            const excelData = [];
+            const numToNames = {};
+            
+            for (const contact of contacts) {
+                const info = extractContactInfo(contact);
+                const nom = info.name.trim() || 'Sans nom';
+                
+                if (info.phones.length > 0) {
+                    stats.contactsWithPhone++;
+                    for (const phone of info.phones) {
+                        const phoneFormatted = formaterNumeroFrancais(phone);
+                        const typeNum = detecterTypeNumero(phone);
+                        
+                        excelData.push({
+                            nom: nom,
+                            numero: phoneFormatted,
+                            type: typeNum
+                        });
+                        
+                        stats.totalPhoneNumbers++;
+                        
+                        // Track duplicates for warning purposes only
+                        if (!numToNames[phone]) {
+                            numToNames[phone] = new Set([nom]);
+                        } else {
+                            if (!numToNames[phone].has(nom)) {
+                                warnings.push(`Doublon suspect: le numéro ${phoneFormatted} est associé aux noms "${Array.from(numToNames[phone]).join(', ')}" et "${nom}".`);
+                                numToNames[phone].add(nom);
+                                duplicateNumbers.add(phone);
+                                stats.duplicatesDetected++;
+                            }
+                        }
+                    }
+                } else {
+                    // TOUJOURS inclure les contacts sans numéro
+                    stats.contactsWithoutPhone++;
+                    excelData.push({
+                        nom: nom,
+                        numero: 'Aucun numéro',
+                        type: ''
+                    });
+                }
+            }
+            
+            stats.contactsAddedToExcel = excelData.length;
+            return excelData;
+        }
+
+        // --- Event Listeners and UI Logic ---
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const convertBtn = document.getElementById('convertBtn');
+        const progressSection = document.getElementById('progressSection');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const statsSection = document.getElementById('statsSection');
+        const warningSection = document.getElementById('warningSection');
+        const resultSection = document.getElementById('resultSection');
+        const fileNameDisplay = document.getElementById('fileName');
+        const fileSizeDisplay = document.getElementById('fileSize');
+        const fileInfoDisplay = document.getElementById('fileInfo');
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        uploadArea.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                fileInput.click();
+            }
+        });
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        /**
+         * Handles the selected file, displays its info, and shows the convert button.
+         */
+        function handleFile(file) {
+            if (!file.name.toLowerCase().endsWith('.vcf')) {
+                alert('Veuillez sélectionner un fichier VCF.');
+                resetApp();
+                return;
+            }
+            
+            selectedFile = file;
+            fileNameDisplay.textContent = file.name;
+            fileSizeDisplay.textContent = `${(file.size / 1024).toFixed(2)} KB`;
+            fileInfoDisplay.style.display = 'block';
+            convertBtn.style.display = 'inline-block';
+            progressSection.style.display = 'none';
+            statsSection.style.display = 'none';
+            warningSection.style.display = 'none';
+            resultSection.style.display = 'none';
+        }
+
+        /**
+         * Initiates the file conversion process with a simulated progress bar.
+         */
+        function convertFile() {
+            if (!selectedFile) {
+                alert('Veuillez d\'abord sélectionner un fichier VCF.');
+                return;
+            }
+            
+            convertBtn.disabled = true;
+            convertBtn.textContent = 'Conversion en cours...';
+
+            progressSection.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressSection.setAttribute('aria-valuenow', '0');
+
+            stats = {
+                totalContacts: 0,
+                contactsWithPhone: 0,
+                contactsWithoutPhone: 0,
+                totalPhoneNumbers: 0,
+                contactsAddedToExcel: 0,
+                duplicatesDetected: 0
+            };
+            warnings = [];
+            duplicateNumbers.clear();
+
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 20;
+                if (progress > 95) progress = 95;
+                
+                progressFill.style.width = progress + '%';
+                progressSection.setAttribute('aria-valuenow', progress);
+                
+                if (progress < 30) {
+                    progressText.textContent = 'Lecture du fichier VCF...';
+                } else if (progress < 60) {
+                    progressText.textContent = 'Extraction des contacts...';
+                } else if (progress < 90) {
+                    progressText.textContent = 'Formatage des numéros...';
+                } else {
+                    progressText.textContent = 'Finalisation...';
+                }
+                
+                if (progress >= 95) {
+                    clearInterval(interval);
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        try {
+                            const content = e.target.result;
+                            convertedData = processVCFFile(content);
+                            progressFill.style.width = '100%';
+                            progressSection.setAttribute('aria-valuenow', '100');
+                            progressText.textContent = 'Terminé !';
+                            setTimeout(displayResults, 500);
+                        } catch (error) {
+                            console.error('Erreur lors du traitement du fichier VCF:', error);
+                            alert('Une erreur est survenue lors du traitement du fichier VCF. Assurez-vous que le fichier est valide.');
+                            resetApp();
+                        }
+                    };
+                    reader.onerror = () => {
+                        alert('Impossible de lire le fichier.');
+                        resetApp();
+                    };
+                    reader.readAsText(selectedFile);
+                }
+            }, 100);
+        }
+
+        /**
+         * Displays the conversion results, including statistics and warnings.
+         */
+        function displayResults() {
+            progressSection.style.display = 'none';
+            
+            document.getElementById('totalContacts').textContent = stats.totalContacts;
+            document.getElementById('contactsWithPhone').textContent = stats.contactsWithPhone;
+            document.getElementById('totalPhones').textContent = stats.totalPhoneNumbers;
+            document.getElementById('finalExported').textContent = stats.contactsAddedToExcel;
+            document.getElementById('contactsWithoutPhone').textContent = stats.contactsWithoutPhone;
+            statsSection.style.display = 'block';
+            
+            const warningList = document.getElementById('warningList');
+            warningList.innerHTML = '';
+            if (warnings.length > 0) {
+                warnings.forEach(warning => {
+                    const li = document.createElement('li');
+                    li.textContent = warning;
+                    warningList.appendChild(li);
+                });
+                warningSection.style.display = 'block';
+            } else {
+                warningSection.style.display = 'none';
+            }
+            
+            resultSection.style.display = 'block';
+            convertBtn.style.display = 'none';
+            convertBtn.disabled = false;
+            convertBtn.textContent = '🔄 Convertir en Excel';
+
+            setTimeout(() => {
+                document.querySelectorAll('.stat-card').forEach((card, index) => {
+                    setTimeout(() => {
+                        card.style.transform = 'translateY(-5px)';
+                        setTimeout(() => {
+                            card.style.transform = 'translateY(0)';
+                        }, 200);
+                    }, index * 100);
+                });
+            }, 500);
+        }
+
+        /**
+         * Downloads the converted data as an Excel (.xlsx) file.
+         * @param {boolean} onlyWithPhone - Whether to include only contacts with phone numbers
+         */
+        function downloadFile(onlyWithPhone = false) {
+            if (!convertedData || convertedData.length === 0) {
+                alert('Aucune donnée à exporter. Veuillez convertir un fichier VCF d\'abord.');
+                return;
+            }
+            
+            try {
+                if (typeof XLSX === 'undefined') {
+                    alert('Erreur: La bibliothèque SheetJS n\'est pas chargée. Veuillez recharger la page.');
+                    return;
+                }
+                
+                let dataToExport = convertedData;
+                let exportType = "tous_contacts";
+                let removedCount = 0;
+                
+                if (onlyWithPhone) {
+                    // Filter out contacts without phone numbers
+                    const originalLength = convertedData.length;
+                    
+                    dataToExport = convertedData.filter(row => {
+                        return row.numero !== 'Aucun numéro';
+                    });
+                    
+                    removedCount = originalLength - dataToExport.length;
+                    exportType = "avec_numero_seulement";
+                }
+                
+                const worksheetData = [
+                    ['Nom', 'Numéro', 'Type'], // Headers
+                    ...dataToExport.map(row => [row.nom, row.numero, row.type])
+                ];
+                
+                const workbook = XLSX.utils.book_new();
+                const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+                
+                // Define column widths for better readability
+                worksheet['!cols'] = [
+                    { wch: 30 }, // Name
+                    { wch: 20 }, // Number
+                    { wch: 15 }  // Type
+                ];
+                
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts');
+                
+                // Use selected file name for output, or a default
+                const baseName = selectedFile ? selectedFile.name.replace(/\.vcf$/i, '') : 'Contacts';
+                const outputFileName = `${baseName}_${exportType}.xlsx`;
+                XLSX.writeFile(workbook, outputFileName);
+                
+                const filterInfo = onlyWithPhone ? 
+                    `\n📞 ${removedCount} contacts sans numéro exclus (${dataToExport.length} lignes avec numéro)` : 
+                    `\n📋 Tous les contacts inclus (${dataToExport.length} lignes total)`;
+                
+                alert(`✅ Fichier Excel ("${outputFileName}") téléchargé avec succès!${filterInfo}\n\n📊 Colonnes:\n• Colonne A: Nom\n• Colonne B: Numéro\n• Colonne C: Type`);
+                
+            } catch (error) {
+                console.error('Erreur lors de la génération du fichier Excel:', error);
+                alert('❌ Erreur lors de la génération du fichier Excel. Veuillez réessayer.');
+            }
+        }
+
+        /**
+         * Resets the application to its initial state.
+         */
+        function resetApp() {
+            selectedFile = null;
+            convertedData = null;
+            warnings = [];
+            duplicateNumbers.clear();
+            
+            fileInfoDisplay.style.display = 'none';
+            progressSection.style.display = 'none';
+            statsSection.style.display = 'none';
+            warningSection.style.display = 'none';
+            resultSection.style.display = 'none';
+            convertBtn.style.display = 'none';
+            convertBtn.disabled = false;
+            convertBtn.textContent = '🔄 Convertir en Excel';
+            
+            fileInput.value = '';
+        }
+    </script>
+</body>
+</html>
