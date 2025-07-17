@@ -2,6 +2,8 @@
 
 Convertisseur de contacts VCF vers Excel — rapide, propre, et optimisé 🇫🇷
 
+👉 Teste-le EN LIGNE ici : https://lnkd.in/dyfNU-y2
+
 ## 🔧 Fonctionnalités principales
 
 * ✅ Conversion .vcf → .xlsx
