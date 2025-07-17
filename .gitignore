@@ -1,0 +1,25 @@
+# Node modules (si un jour tu ajoutes npm)
+node_modules/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Systèmes d'édition
+.vscode/
+*.code-workspace
+
+# Déploiement local
+dist/
+build/
+
+# Archives temporaires
+*.zip
+*.tar.gz
+
+# Fichiers Excel générés
+*.xls
+*.xlsx
