@@ -2,7 +2,7 @@
 
 Convertisseur de contacts VCF vers Excel — rapide, propre, et optimisé 🇫🇷
 
-👉 Teste-le EN LIGNE ici : [https://lnkd.in/dyfNU-y2](https://foxsalaf.github.io/vcf2excel/)
+👉 Teste-le EN LIGNE ici : (https://foxsalaf.github.io/vcf2excel/)
 
 ## 🔧 Fonctionnalités principales
 
