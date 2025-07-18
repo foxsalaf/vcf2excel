@@ -23,12 +23,6 @@ Convertisseur de contacts VCF vers Excel — rapide, propre, et optimisé 🇫�
 
 ## 🚀 Utilisation
 
-### 🖥️ Version locale (Python)
-
-```bash
-python main.py
-```
-
 ### 🌐 Version Web (HTML/JS)
 
 * Interface drag & drop
@@ -46,7 +40,7 @@ MIT — Utilisation libre avec mention.
 
 ## ✨ Auteur
 
-Développé par ([Mouhammad](https://www.linkedin.com/in/mouhammad-ahmed/) avec l'aide d'une IA bien câblée.
+Développé par Mouhammad avec l'aide d'une IA bien câblée.
 
 Merci à **Claude AI** et **ChatGPT** pour le soutien technique et les idées d'optimisation. 🤝
 
