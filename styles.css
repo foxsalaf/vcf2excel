@@ -47,7 +47,7 @@ h1 em { color: #5966c8; font-style: normal; }
 .section-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
 .section-heading h2 { font-size: 18px; font-weight: 650; letter-spacing: -.4px; margin: 0; }
 .step-number { width: 30px; height: 30px; display: grid; place-items: center; background: #edf0ff; color: #5969b7; border-radius: 9px; font-size: 13px; font-weight: 700; }
-.format-badge { margin-left: auto; padding: 4px 9px; background: #f1f4fc; border-radius: 7px; color: #6a7aa0; font: 12px Consolas, monospace; }
+.format-badge { margin-left: auto; padding: 4px 9px; background: #f1f4fc; border-radius: 7px; color: #6a7aa0; font: 12px Consolas, monospace; white-space: nowrap; }
 .upload-area { padding: 36px 20px 30px; position: relative; cursor: pointer; text-align: center; border: 1.5px dashed #adbee8; border-radius: 16px; background: #f5f8ff; transition: background .18s, border-color .18s; }
 .upload-area:hover, .upload-area.dragover { border-color: #6478df; background: #edf2ff; }
 .upload-icon { display: grid; place-items: center; width: 66px; height: 66px; margin: 0 auto 18px; border-radius: 20px; background: white; border: 1px solid #dce6fb; box-shadow: 0 5px 20px #667dce12; color: #6579c8; }

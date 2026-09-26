@@ -4,7 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 // Charge le script réel de index.html dans un contexte sans DOM ni dépendance externe.
-// Le script du CDN (SheetJS) est ignoré ; les éléments de page sont remplacés par des coquilles.
+// Les scripts locaux sont chargés ; les éléments de page sont remplacés par des coquilles.
 function loadApp() {
   const root = process.env.VCF_APP_ROOT || path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
