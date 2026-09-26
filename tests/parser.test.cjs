@@ -1,28 +1,9 @@
+'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+const { loadApp, card } = require('./load-app.cjs');
 
-// Exercise the actual browser script, without a DOM or external packages.
-function parser() {
-  const root = process.env.VCF_APP_ROOT || path.join(__dirname, '..');
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const element = () => ({ addEventListener() {}, style: {}, classList: { add() {}, remove() {} } });
-  const context = vm.createContext({ console, TextDecoder, TextEncoder,
-    document: { getElementById: element, querySelectorAll: () => [] } });
-  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
-    const src = match[1].match(/src=["']([^"']+)["']/i);
-    if (src && /^https?:/.test(src[1])) continue;
-    const code = src ? fs.readFileSync(path.join(root, src[1]), 'utf8') : match[2];
-    vm.runInContext(code, context);
-  }
-  return content => {
-    context.input = content;
-    return JSON.parse(vm.runInContext('JSON.stringify(processVCFFile(input))', context));
-  };
-}
-const card = (...lines) => ['BEGIN:VCARD', 'VERSION:3.0', ...lines, 'END:VCARD'].join('\r\n');
+const parser = () => content => loadApp().run(content).rows;
 
 test('ordinary contact and grouped telephone', () => {
   const rows = parser()(card('FN:Alice', 'item1.TEL;TYPE=CELL:06 12 34 56 78'));
@@ -36,6 +17,9 @@ test('parameterized formatted name preserves accents', () => {
 });
 test('structured name is used when FN is absent', () => {
   assert.equal(parser()(card('N:Dupont;Alice;;;'))[0].nom, 'Alice Dupont');
+});
+test('organisation is used when FN and N are absent', () => {
+  assert.equal(parser()(card('ORG:Société Exemple;Service client'))[0].nom, 'Société Exemple');
 });
 test('folded names are unfolded', () => {
   assert.equal(parser()(card('FN:Alice très', ' longue'))[0].nom, 'Alice trèslongue');
@@ -56,4 +40,11 @@ test('classic Mac CR line endings preserve contacts', () => {
 });
 test('quoted printable names are decoded', () => {
   assert.equal(parser()(card('FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:=C3=89lodie'))[0].nom, 'Élodie');
+});
+test('quoted printable soft line breaks are joined', () => {
+  const rows = parser()(card('FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:=C3=89lodie=', 'Martin'));
+  assert.equal(rows[0].nom, 'ÉlodieMartin');
+});
+test('a file without any card gives no row', () => {
+  assert.deepEqual(parser()('Bonjour\r\nceci n\'est pas un vCard'), []);
 });

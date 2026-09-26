@@ -409,59 +409,93 @@
     <script>
         let selectedFile = null;
         let convertedData = null;
-        let duplicateNumbers = new Set(); // Store numbers that appear multiple times
-        let stats = {
-            totalContacts: 0,
-            contactsWithPhone: 0,
-            contactsWithoutPhone: 0,
-            totalPhoneNumbers: 0,
-            contactsAddedToExcel: 0,
-            duplicatesDetected: 0
-        };
+        let duplicateNumbers = new Set(); // Numéros rencontrés sous plusieurs noms
+        let stats = creerStats();
         let warnings = [];
 
+        function creerStats() {
+            return {
+                totalContacts: 0,
+                contactsWithPhone: 0,
+                contactsWithoutPhone: 0,
+                totalPhoneNumbers: 0,
+                contactsAddedToExcel: 0,
+                duplicatesDetected: 0, // Même numéro sous plusieurs noms (signalé, conservé)
+                duplicatesRemoved: 0   // Même nom et même numéro en double (une seule ligne gardée)
+            };
+        }
+
+        // --- Numéros de téléphone ---
+
         /**
-         * Formats a French phone number with spaces.
+         * Indicatifs traités comme des numéros français : métropole (+33) et départements
+         * d'outre-mer qui partagent le plan à 10 chiffres (Réunion et Mayotte +262,
+         * Guadeloupe +590, Guyane +594, Martinique +596).
+         */
+        const INDICATIFS_FRANCE = ['33', '262', '590', '594', '596'];
+
+        /**
+         * Ramène un numéro brut à une forme canonique : 10 chiffres nationaux pour la France
+         * et les DOM, « +indicatif » suivi des chiffres pour l'international.
+         * Retourne null si la valeur n'est pas un numéro exploitable.
+         */
+        function normaliserNumero(numero) {
+            let valeur = String(numero ?? '').trim().replace(/^tel:/i, '');
+            // Extension ou pause (« , », « ; », « p », « w », « x », « ext ») : on garde le numéro de base.
+            valeur = valeur.split(/[,;pwx]|ext/i)[0];
+            valeur = valeur.replace(/[\s\-().]/g, '');
+            if (valeur.startsWith('00')) valeur = '+' + valeur.slice(2);
+            if (!/^\+?\d{4,}$/.test(valeur)) return null;
+            if (!valeur.startsWith('+')) return valeur;
+            for (const indicatif of INDICATIFS_FRANCE) {
+                if (!valeur.startsWith('+' + indicatif)) continue;
+                let national = valeur.slice(indicatif.length + 1);
+                if (national.length === 10 && national.startsWith('0')) national = national.slice(1); // « +33 (0)6 … »
+                if (national.length === 9) return '0' + national;
+            }
+            return valeur;
+        }
+
+        /**
+         * Formate un numéro pour la colonne Excel : « 06 12 34 56 78 » pour la France et
+         * les DOM, forme internationale compacte sinon.
          */
         function formaterNumeroFrancais(numero) {
-            const cleanNumero = numero.replace(/\s/g, '');
-            if (cleanNumero.startsWith('0') && cleanNumero.length === 10) {
-                return `${cleanNumero.slice(0,2)} ${cleanNumero.slice(2,4)} ${cleanNumero.slice(4,6)} ${cleanNumero.slice(6,8)} ${cleanNumero.slice(8)}`;
-            }
-            return numero;
+            const canonique = normaliserNumero(numero);
+            if (canonique === null) return String(numero ?? '').trim();
+            if (/^0\d{9}$/.test(canonique)) return canonique.replace(/(\d{2})(?=\d)/g, '$1 ');
+            return canonique;
         }
 
         /**
-         * Detects the type of phone number (Mobile, Fixe, International, Inconnu).
+         * Détecte le type d'un numéro : Mobile, Fixe, International ou Inconnu.
          */
         function detecterTypeNumero(numero) {
-            const cleanNum = numero.replace(/[^\d+]/g, '');
-
-            if (cleanNum.startsWith('+') && !cleanNum.startsWith('+33')) {
-                return "International";
-            }
-            const frenchNum = cleanNum.startsWith('+33') ? '0' + cleanNum.substring(3) : cleanNum;
-
-            if (frenchNum.startsWith('06') || frenchNum.startsWith('07')) {
-                return "Mobile";
-            }
-            if (['01', '02', '03', '04', '05', '09'].some(prefix => frenchNum.startsWith(prefix))) {
-                return "Fixe";
-            }
-            return "Inconnu";
+            const canonique = normaliserNumero(numero);
+            if (canonique === null) return 'Inconnu';
+            if (canonique.startsWith('+')) return 'International';
+            if (canonique.length !== 10) return 'Inconnu';
+            if (/^0[67]/.test(canonique)) return 'Mobile';
+            if (/^0[1-59]/.test(canonique)) return 'Fixe';
+            return 'Inconnu';
         }
 
+        // --- Lecture du vCard ---
+
         /**
-         * Extracts contact information (name, phones) from VCF lines.
+         * Extrait le nom et les numéros d'un contact (lignes d'une carte, déjà dépliées).
+         * Nom : FN, sinon N (prénom nom), sinon ORG. Numéros : normalisés, sans doublon dans la carte.
          */
         function extractContactInfo(contactLines) {
             const info = { name: '', phones: [] };
             let structuredName = '';
+            let organisation = '';
+            const phonesVus = new Set();
             const unescapeText = value => value.replace(/\\([nN,;\\])/g,
                 (_, char) => /[nN]/.test(char) ? '\n' : char);
 
             for (const line of contactLines) {
-                const property = line.match(/^(?:[\w-]+\.)?(FN|N|TEL)((?:;(?:[^:"\r\n]|"[^"]*")*)?):(.*)$/i);
+                const property = line.match(/^(?:[\w-]+\.)?(FN|N|ORG|TEL)((?:;(?:[^:"\r\n]|"[^"]*")*)?):(.*)$/i);
                 if (!property) continue;
                 const [, field, params] = property;
                 let value = property[3];
@@ -477,31 +511,38 @@
                         }
                     }
                     try { value = new TextDecoder(charset, { fatal: true }).decode(new Uint8Array(bytes)); }
-                    catch (_) { /* Keep original text when the encoding cannot be decoded. */ }
+                    catch (_) { /* Texte conservé tel quel si le jeu de caractères est inconnu. */ }
                 }
-                if (field.toUpperCase() === 'FN') {
+                const champ = field.toUpperCase();
+                if (champ === 'FN') {
                     info.name = unescapeText(value).trim();
-                } else if (field.toUpperCase() === 'N') {
+                } else if (champ === 'N') {
                     const parts = (value.match(/(?:\\.|[^;\\])*(?:;|$)/g) || [])
                         .map(part => unescapeText(part.replace(/;$/, '')).trim());
                     structuredName = [parts[3], parts[1], parts[2], parts[0], parts[4]].filter(Boolean).join(' ');
+                } else if (champ === 'ORG') {
+                    organisation = unescapeText(value.split(/(?<!\\);/)[0]).trim();
                 } else {
-                    const clean = value.trim().replace(/^tel:/i, '').replace(/[\s\-().]/g, '');
-                    if (/^\+?\d{4,}$/.test(clean)) info.phones.push(clean);
+                    const canonique = normaliserNumero(value);
+                    if (canonique !== null && !phonesVus.has(canonique)) {
+                        phonesVus.add(canonique);
+                        info.phones.push(canonique);
+                    }
                 }
             }
-            if (!info.name) info.name = structuredName;
+            if (!info.name) info.name = structuredName || organisation;
             return info;
         }
 
         /**
-         * Parses VCF content into individual contact blocks.
+         * Découpe le contenu VCF en cartes (listes de lignes), après dépliage des lignes
+         * continuées (RFC 2426/6350) et des coupures « = » du quoted-printable (vCard 2.1).
          */
         function parseVCFContacts(lines) {
             const contacts = [];
             let current = [];
             let inVcard = false;
-            
+
             const unfolded = [];
             for (const line of lines) {
                 const previous = unfolded[unfolded.length - 1];
@@ -529,79 +570,90 @@
                     current.push(trimmed);
                 }
             }
-            
+
             return contacts;
         }
 
         /**
-         * Processes the VCF file content to extract and format contact data for Excel.
+         * Transforme le texte VCF en lignes Excel { nom, numero, type } et remplit stats/warnings.
+         * Un contact sans numéro donne une ligne « Aucun numéro ». Une ligne identique
+         * (même nom, même numéro) n'est gardée qu'une fois ; un numéro vu sous plusieurs
+         * noms est conservé et signalé.
          */
         function processVCFFile(content) {
-            const lines = content.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
+            const lines = content.replace(/^﻿/, '').split(/\r\n|\n|\r/);
             const contacts = parseVCFContacts(lines);
-            
+
             stats.totalContacts = contacts.length;
             const excelData = [];
-            const numToNames = {};
-            
+            const nomsParNumero = new Map();
+
             for (const contact of contacts) {
                 const info = extractContactInfo(contact);
                 const nom = info.name.trim() || 'Sans nom';
-                
-                if (info.phones.length > 0) {
-                    stats.contactsWithPhone++;
-                    for (const phone of info.phones) {
-                        const phoneFormatted = formaterNumeroFrancais(phone);
-                        const typeNum = detecterTypeNumero(phone);
-                        
-                        excelData.push({
-                            nom: nom,
-                            numero: phoneFormatted,
-                            type: typeNum
-                        });
-                        
-                        stats.totalPhoneNumbers++;
-                        
-                        // Track duplicates for warning purposes only
-                        if (!numToNames[phone]) {
-                            numToNames[phone] = new Set([nom]);
-                        } else {
-                            if (!numToNames[phone].has(nom)) {
-                                warnings.push(`Doublon suspect: le numéro ${phoneFormatted} est associé aux noms "${Array.from(numToNames[phone]).join(', ')}" et "${nom}".`);
-                                numToNames[phone].add(nom);
-                                duplicateNumbers.add(phone);
-                                stats.duplicatesDetected++;
-                            }
-                        }
-                    }
-                } else {
-                    // TOUJOURS inclure les contacts sans numéro
+
+                if (info.phones.length === 0) {
                     stats.contactsWithoutPhone++;
-                    excelData.push({
-                        nom: nom,
-                        numero: 'Aucun numéro',
-                        type: ''
-                    });
+                    excelData.push({ nom: nom, numero: 'Aucun numéro', type: '' });
+                    continue;
+                }
+
+                stats.contactsWithPhone++;
+                for (const phone of info.phones) {
+                    stats.totalPhoneNumbers++;
+                    const numero = formaterNumeroFrancais(phone);
+                    const noms = nomsParNumero.get(phone);
+                    if (!noms) {
+                        nomsParNumero.set(phone, new Set([nom]));
+                    } else if (noms.has(nom)) {
+                        stats.duplicatesRemoved++;
+                        continue;
+                    } else {
+                        warnings.push(`Le numéro ${numero} apparaît sous plusieurs noms : ${[...noms, nom].join(', ')}.`);
+                        noms.add(nom);
+                        duplicateNumbers.add(phone);
+                        stats.duplicatesDetected++;
+                    }
+                    excelData.push({ nom: nom, numero: numero, type: detecterTypeNumero(phone) });
                 }
             }
-            
+
             stats.contactsAddedToExcel = excelData.length;
             return excelData;
         }
 
-        // --- Event Listeners and UI Logic ---
+        /**
+         * Décode les octets du fichier : UTF-16 si le fichier porte sa marque d'ordre,
+         * sinon UTF-8 strict, sinon Windows-1252 (anciens exports vCard 2.1).
+         */
+        function decoderFichierVcf(buffer) {
+            const bytes = new Uint8Array(buffer);
+            if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+                return { text: new TextDecoder('utf-16le').decode(bytes), encoding: 'utf-16le' };
+            }
+            if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+                return { text: new TextDecoder('utf-16be').decode(bytes), encoding: 'utf-16be' };
+            }
+            try {
+                return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encoding: 'utf-8' };
+            } catch (_) {
+                return { text: new TextDecoder('windows-1252').decode(bytes), encoding: 'windows-1252' };
+            }
+        }
+
+        // --- Interface ---
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const convertBtn = document.getElementById('convertBtn');
         const progressSection = document.getElementById('progressSection');
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
         const statsSection = document.getElementById('statsSection');
         const warningSection = document.getElementById('warningSection');
         const resultSection = document.getElementById('resultSection');
         const fileNameDisplay = document.getElementById('fileName');
         const fileSizeDisplay = document.getElementById('fileSize');
         const fileInfoDisplay = document.getElementById('fileInfo');
+        const statusMessage = document.getElementById('statusMessage');
+        const convertBtnLabel = (convertBtn.textContent || '').trim() || 'Convertir en Excel';
 
         uploadArea.addEventListener('click', () => fileInput.click());
 
@@ -634,225 +686,219 @@
             }
         });
 
-        /**
-         * Handles the selected file, displays its info, and shows the convert button.
-         */
-        function handleFile(file) {
-            if (!file.name.toLowerCase().endsWith('.vcf')) {
-                alert('Veuillez sélectionner un fichier VCF.');
-                resetApp();
-                return;
+        function afficher(element, display = 'block') {
+            if (element) element.style.display = display;
+        }
+
+        function masquer(...elements) {
+            for (const element of elements) {
+                if (element) element.style.display = 'none';
             }
-            
-            selectedFile = file;
-            fileNameDisplay.textContent = file.name;
-            fileSizeDisplay.textContent = `${(file.size / 1024).toFixed(2)} KB`;
-            fileInfoDisplay.style.display = 'block';
-            convertBtn.style.display = 'inline-block';
-            progressSection.style.display = 'none';
-            statsSection.style.display = 'none';
-            warningSection.style.display = 'none';
-            resultSection.style.display = 'none';
         }
 
         /**
-         * Initiates the file conversion process with a simulated progress bar.
+         * Affiche un message d'état (info, success ou error) sous la zone de dépôt.
+         * Sans élément #statusMessage dans la page, seules les erreurs sont signalées.
+         */
+        function afficherStatut(message, type = 'info') {
+            if (!statusMessage) {
+                if (message && type === 'error') alert(message);
+                return;
+            }
+            statusMessage.textContent = message;
+            statusMessage.dataset.type = type;
+            statusMessage.hidden = !message;
+        }
+
+        function formaterTaille(octets) {
+            if (octets < 1024 * 1024) return `${(octets / 1024).toFixed(1)} Ko`;
+            return `${(octets / (1024 * 1024)).toFixed(2)} Mo`;
+        }
+
+        function restaurerBoutonConvertir() {
+            convertBtn.disabled = false;
+            convertBtn.textContent = convertBtnLabel;
+        }
+
+        /**
+         * Prend en charge le fichier choisi : contrôle de l'extension, affichage du nom
+         * et de la taille, puis bouton de conversion.
+         */
+        function handleFile(file) {
+            if (!/\.(vcf|vcard)$/i.test(file.name)) {
+                resetApp();
+                afficherStatut(`« ${file.name} » n'est pas un fichier VCF. Choisissez un fichier .vcf.`, 'error');
+                return;
+            }
+
+            selectedFile = file;
+            convertedData = null;
+            fileNameDisplay.textContent = file.name;
+            fileSizeDisplay.textContent = formaterTaille(file.size);
+            afficher(fileInfoDisplay);
+            afficher(convertBtn, 'inline-block');
+            restaurerBoutonConvertir();
+            masquer(progressSection, statsSection, warningSection, resultSection);
+            afficherStatut('');
+        }
+
+        /**
+         * Lit le fichier dans le navigateur, le convertit et affiche le résultat.
+         * Rien n'est envoyé sur un serveur.
          */
         function convertFile() {
             if (!selectedFile) {
-                alert('Veuillez d\'abord sélectionner un fichier VCF.');
+                afficherStatut('Choisissez d\'abord un fichier VCF.', 'error');
                 return;
             }
-            
+
             convertBtn.disabled = true;
-            convertBtn.textContent = 'Conversion en cours...';
+            convertBtn.textContent = 'Conversion en cours…';
+            masquer(progressSection);
+            afficherStatut('');
 
-            progressSection.style.display = 'block';
-            progressFill.style.width = '0%';
-            progressSection.setAttribute('aria-valuenow', '0');
-
-            stats = {
-                totalContacts: 0,
-                contactsWithPhone: 0,
-                contactsWithoutPhone: 0,
-                totalPhoneNumbers: 0,
-                contactsAddedToExcel: 0,
-                duplicatesDetected: 0
-            };
+            stats = creerStats();
             warnings = [];
             duplicateNumbers.clear();
 
-            let progress = 0;
-            const interval = setInterval(() => {
-                progress += Math.random() * 20;
-                if (progress > 95) progress = 95;
-                
-                progressFill.style.width = progress + '%';
-                progressSection.setAttribute('aria-valuenow', progress);
-                
-                if (progress < 30) {
-                    progressText.textContent = 'Lecture du fichier VCF...';
-                } else if (progress < 60) {
-                    progressText.textContent = 'Extraction des contacts...';
-                } else if (progress < 90) {
-                    progressText.textContent = 'Formatage des numéros...';
-                } else {
-                    progressText.textContent = 'Finalisation...';
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const { text, encoding } = decoderFichierVcf(e.target.result);
+                    convertedData = processVCFFile(text);
+                    if (convertedData.length === 0) {
+                        convertedData = null;
+                        restaurerBoutonConvertir();
+                        afficherStatut('Aucun contact trouvé dans ce fichier. Vérifiez qu\'il s\'agit d\'un export VCF.', 'error');
+                        return;
+                    }
+                    displayResults();
+                    let message = `${stats.totalContacts} contact${stats.totalContacts > 1 ? 's' : ''} lu${stats.totalContacts > 1 ? 's' : ''}, ${stats.contactsAddedToExcel} ligne${stats.contactsAddedToExcel > 1 ? 's' : ''} prête${stats.contactsAddedToExcel > 1 ? 's' : ''} pour Excel.`;
+                    if (stats.duplicatesRemoved > 0) {
+                        message += ` ${stats.duplicatesRemoved} doublon${stats.duplicatesRemoved > 1 ? 's' : ''} retiré${stats.duplicatesRemoved > 1 ? 's' : ''}.`;
+                    }
+                    if (encoding === 'windows-1252') {
+                        message += ' Fichier lu en Windows-1252 : vérifiez les accents dans le résultat.';
+                    }
+                    afficherStatut(message, 'success');
+                } catch (error) {
+                    console.error('Erreur lors du traitement du fichier VCF :', error);
+                    restaurerBoutonConvertir();
+                    afficherStatut('Le fichier n\'a pas pu être converti. Vérifiez qu\'il s\'agit d\'un export VCF valide.', 'error');
                 }
-                
-                if (progress >= 95) {
-                    clearInterval(interval);
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        try {
-                            const content = e.target.result;
-                            convertedData = processVCFFile(content);
-                            progressFill.style.width = '100%';
-                            progressSection.setAttribute('aria-valuenow', '100');
-                            progressText.textContent = 'Terminé !';
-                            setTimeout(displayResults, 500);
-                        } catch (error) {
-                            console.error('Erreur lors du traitement du fichier VCF:', error);
-                            alert('Une erreur est survenue lors du traitement du fichier VCF. Assurez-vous que le fichier est valide.');
-                            resetApp();
-                        }
-                    };
-                    reader.onerror = () => {
-                        alert('Impossible de lire le fichier.');
-                        resetApp();
-                    };
-                    reader.readAsText(selectedFile);
-                }
-            }, 100);
+            };
+            reader.onerror = () => {
+                restaurerBoutonConvertir();
+                afficherStatut('Le fichier n\'a pas pu être lu.', 'error');
+            };
+            reader.readAsArrayBuffer(selectedFile);
+        }
+
+        function afficherCompteur(id, valeur) {
+            const element = document.getElementById(id);
+            if (element) element.textContent = valeur;
         }
 
         /**
-         * Displays the conversion results, including statistics and warnings.
+         * Affiche les statistiques, les avertissements et les boutons d'export.
          */
         function displayResults() {
-            progressSection.style.display = 'none';
-            
-            document.getElementById('totalContacts').textContent = stats.totalContacts;
-            document.getElementById('contactsWithPhone').textContent = stats.contactsWithPhone;
-            document.getElementById('totalPhones').textContent = stats.totalPhoneNumbers;
-            document.getElementById('finalExported').textContent = stats.contactsAddedToExcel;
-            document.getElementById('contactsWithoutPhone').textContent = stats.contactsWithoutPhone;
-            statsSection.style.display = 'block';
-            
+            masquer(progressSection);
+
+            afficherCompteur('totalContacts', stats.totalContacts);
+            afficherCompteur('contactsWithPhone', stats.contactsWithPhone);
+            afficherCompteur('totalPhones', stats.totalPhoneNumbers);
+            afficherCompteur('finalExported', stats.contactsAddedToExcel);
+            afficherCompteur('contactsWithoutPhone', stats.contactsWithoutPhone);
+            afficherCompteur('duplicatesCount', stats.duplicatesRemoved + stats.duplicatesDetected);
+            afficher(statsSection);
+
             const warningList = document.getElementById('warningList');
-            warningList.innerHTML = '';
-            if (warnings.length > 0) {
+            if (warningList) {
+                warningList.innerHTML = '';
                 warnings.forEach(warning => {
                     const li = document.createElement('li');
                     li.textContent = warning;
                     warningList.appendChild(li);
                 });
-                warningSection.style.display = 'block';
-            } else {
-                warningSection.style.display = 'none';
             }
-            
-            resultSection.style.display = 'block';
-            convertBtn.style.display = 'none';
-            convertBtn.disabled = false;
-            convertBtn.textContent = '🔄 Convertir en Excel';
+            if (warnings.length > 0) {
+                afficher(warningSection);
+            } else {
+                masquer(warningSection);
+            }
 
-            setTimeout(() => {
-                document.querySelectorAll('.stat-card').forEach((card, index) => {
-                    setTimeout(() => {
-                        card.style.transform = 'translateY(-5px)';
-                        setTimeout(() => {
-                            card.style.transform = 'translateY(0)';
-                        }, 200);
-                    }, index * 100);
-                });
-            }, 500);
+            afficher(resultSection);
+            masquer(convertBtn);
+            restaurerBoutonConvertir();
         }
 
         /**
-         * Downloads the converted data as an Excel (.xlsx) file.
-         * @param {boolean} onlyWithPhone - Whether to include only contacts with phone numbers
+         * Génère et télécharge le fichier Excel (.xlsx).
+         * @param {boolean} onlyWithPhone - true pour exclure les contacts sans numéro
          */
         function downloadFile(onlyWithPhone = false) {
             if (!convertedData || convertedData.length === 0) {
-                alert('Aucune donnée à exporter. Veuillez convertir un fichier VCF d\'abord.');
+                afficherStatut('Aucune donnée à exporter. Convertissez d\'abord un fichier VCF.', 'error');
                 return;
             }
-            
+
             try {
                 if (typeof XLSX === 'undefined') {
-                    alert('Erreur: La bibliothèque SheetJS n\'est pas chargée. Veuillez recharger la page.');
+                    afficherStatut('La bibliothèque de génération Excel n\'a pas pu être chargée. Vérifiez votre connexion, puis rechargez la page.', 'error');
                     return;
                 }
-                
+
                 let dataToExport = convertedData;
-                let exportType = "tous_contacts";
+                let exportType = 'tous_contacts';
                 let removedCount = 0;
-                
+
                 if (onlyWithPhone) {
-                    // Filter out contacts without phone numbers
-                    const originalLength = convertedData.length;
-                    
-                    dataToExport = convertedData.filter(row => {
-                        return row.numero !== 'Aucun numéro';
-                    });
-                    
-                    removedCount = originalLength - dataToExport.length;
-                    exportType = "avec_numero_seulement";
+                    dataToExport = convertedData.filter(row => row.numero !== 'Aucun numéro');
+                    removedCount = convertedData.length - dataToExport.length;
+                    exportType = 'avec_numero_seulement';
                 }
-                
+
                 const worksheetData = [
-                    ['Nom', 'Numéro', 'Type'], // Headers
+                    ['Nom', 'Numéro', 'Type'],
                     ...dataToExport.map(row => [row.nom, row.numero, row.type])
                 ];
-                
+
                 const workbook = XLSX.utils.book_new();
                 const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-                
-                // Define column widths for better readability
                 worksheet['!cols'] = [
-                    { wch: 30 }, // Name
-                    { wch: 20 }, // Number
+                    { wch: 30 }, // Nom
+                    { wch: 20 }, // Numéro
                     { wch: 15 }  // Type
                 ];
-                
                 XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts');
-                
-                // Use selected file name for output, or a default
-                const baseName = selectedFile ? selectedFile.name.replace(/\.vcf$/i, '') : 'Contacts';
+
+                const baseName = selectedFile ? selectedFile.name.replace(/\.(vcf|vcard)$/i, '') : 'Contacts';
                 const outputFileName = `${baseName}_${exportType}.xlsx`;
                 XLSX.writeFile(workbook, outputFileName);
-                
-                const filterInfo = onlyWithPhone ? 
-                    `\n📞 ${removedCount} contacts sans numéro exclus (${dataToExport.length} lignes avec numéro)` : 
-                    `\n📋 Tous les contacts inclus (${dataToExport.length} lignes total)`;
-                
-                alert(`✅ Fichier Excel ("${outputFileName}") téléchargé avec succès!${filterInfo}\n\n📊 Colonnes:\n• Colonne A: Nom\n• Colonne B: Numéro\n• Colonne C: Type`);
-                
+
+                const detail = onlyWithPhone
+                    ? `${dataToExport.length} lignes avec numéro, ${removedCount} contact${removedCount > 1 ? 's' : ''} sans numéro exclu${removedCount > 1 ? 's' : ''}.`
+                    : `${dataToExport.length} lignes, contacts sans numéro compris.`;
+                afficherStatut(`Fichier « ${outputFileName} » téléchargé : ${detail}`, 'success');
             } catch (error) {
-                console.error('Erreur lors de la génération du fichier Excel:', error);
-                alert('❌ Erreur lors de la génération du fichier Excel. Veuillez réessayer.');
+                console.error('Erreur lors de la génération du fichier Excel :', error);
+                afficherStatut('Le fichier Excel n\'a pas pu être généré. Réessayez.', 'error');
             }
         }
 
         /**
-         * Resets the application to its initial state.
+         * Remet la page à son état initial.
          */
         function resetApp() {
             selectedFile = null;
             convertedData = null;
             warnings = [];
             duplicateNumbers.clear();
-            
-            fileInfoDisplay.style.display = 'none';
-            progressSection.style.display = 'none';
-            statsSection.style.display = 'none';
-            warningSection.style.display = 'none';
-            resultSection.style.display = 'none';
-            convertBtn.style.display = 'none';
-            convertBtn.disabled = false;
-            convertBtn.textContent = '🔄 Convertir en Excel';
-            
+
+            masquer(fileInfoDisplay, progressSection, statsSection, warningSection, resultSection, convertBtn);
+            restaurerBoutonConvertir();
+            afficherStatut('');
             fileInput.value = '';
         }
     </script>
