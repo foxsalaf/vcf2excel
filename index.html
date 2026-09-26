@@ -456,23 +456,41 @@
          */
         function extractContactInfo(contactLines) {
             const info = { name: '', phones: [] };
-            
+            let structuredName = '';
+            const unescapeText = value => value.replace(/\\([nN,;\\])/g,
+                (_, char) => /[nN]/.test(char) ? '\n' : char);
+
             for (const line of contactLines) {
-                if (line.toUpperCase().startsWith('FN:')) {
-                    info.name = line.substring(3).trim();
-                } else if (line.toUpperCase().includes('TEL')) {
-                    // Enhanced regex to handle ALL TEL formats including item1.TEL:, TEL;TYPE=CELL:, etc.
-                    const match = line.match(/(?:item\d+\.)?TEL(?:[^:]*)?:([\d\s\-\+\(\).,]+)/i);
-                    if (match) {
-                        const raw = match[1].trim();
-                        const clean = raw.replace(/[\s\-\(\)\.]/g, '');
-                        if (/^[\+]?[\d]{4,}$/.test(clean)) {
-                            info.phones.push(clean);
+                const property = line.match(/^(?:[\w-]+\.)?(FN|N|TEL)((?:;(?:[^:"\r\n]|"[^"]*")*)?):(.*)$/i);
+                if (!property) continue;
+                const [, field, params] = property;
+                let value = property[3];
+                if (/;ENCODING=QUOTED-PRINTABLE(?:;|$)/i.test(params)) {
+                    const charset = params.match(/;CHARSET="?([^;"\s]+)/i)?.[1] || 'utf-8';
+                    const bytes = [];
+                    for (let i = 0; i < value.length; i++) {
+                        if (value[i] === '=' && /^[\da-f]{2}$/i.test(value.slice(i + 1, i + 3))) {
+                            bytes.push(parseInt(value.slice(i + 1, i + 3), 16));
+                            i += 2;
+                        } else {
+                            bytes.push(...new TextEncoder().encode(value[i]));
                         }
                     }
+                    try { value = new TextDecoder(charset, { fatal: true }).decode(new Uint8Array(bytes)); }
+                    catch (_) { /* Keep original text when the encoding cannot be decoded. */ }
+                }
+                if (field.toUpperCase() === 'FN') {
+                    info.name = unescapeText(value).trim();
+                } else if (field.toUpperCase() === 'N') {
+                    const parts = (value.match(/(?:\\.|[^;\\])*(?:;|$)/g) || [])
+                        .map(part => unescapeText(part.replace(/;$/, '')).trim());
+                    structuredName = [parts[3], parts[1], parts[2], parts[0], parts[4]].filter(Boolean).join(' ');
+                } else {
+                    const clean = value.trim().replace(/^tel:/i, '').replace(/[\s\-().]/g, '');
+                    if (/^\+?\d{4,}$/.test(clean)) info.phones.push(clean);
                 }
             }
-            
+            if (!info.name) info.name = structuredName;
             return info;
         }
 
@@ -484,12 +502,23 @@
             let current = [];
             let inVcard = false;
             
+            const unfolded = [];
             for (const line of lines) {
+                const previous = unfolded[unfolded.length - 1];
+                if (previous && /^[^:]*;ENCODING=QUOTED-PRINTABLE[;:]/i.test(previous) && previous.endsWith('=')) {
+                    unfolded[unfolded.length - 1] = previous.slice(0, -1) + line.replace(/^[ \t]/, '');
+                } else if (/^[ \t]/.test(line) && unfolded.length) {
+                    unfolded[unfolded.length - 1] += line.slice(1);
+                } else {
+                    unfolded.push(line);
+                }
+            }
+            for (const line of unfolded) {
                 const trimmed = line.trim();
-                if (trimmed.startsWith('BEGIN:VCARD')) {
+                if (/^BEGIN:VCARD$/i.test(trimmed)) {
                     current = [trimmed];
                     inVcard = true;
-                } else if (trimmed.startsWith('END:VCARD')) {
+                } else if (/^END:VCARD$/i.test(trimmed)) {
                     current.push(trimmed);
                     if (inVcard) {
                         contacts.push(current);
@@ -508,7 +537,7 @@
          * Processes the VCF file content to extract and format contact data for Excel.
          */
         function processVCFFile(content) {
-            const lines = content.split('\n');
+            const lines = content.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
             const contacts = parseVCFContacts(lines);
             
             stats.totalContacts = contacts.length;
