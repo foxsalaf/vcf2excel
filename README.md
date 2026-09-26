@@ -1,6 +1,6 @@
 # vcf2excel
 
-Convertit un fichier de contacts VCF (vCard) en classeur Excel (.xlsx), directement dans le navigateur.
+Récupère et organise les contacts d'un fichier VCF, CSV, TSV, Excel (.xlsx/.xls) ou ODS en classeur Excel (.xlsx), directement dans le navigateur.
 
 **Utiliser l'outil : https://foxsalaf.github.io/vcf2excel/**
 
@@ -10,12 +10,17 @@ Convertit un fichier de contacts VCF (vCard) en classeur Excel (.xlsx), directem
 
 ## Ce que fait l'outil
 
+- Reconnaît les colonnes courantes françaises, Google Contacts et Outlook : noms, prénoms et plusieurs téléphones. Les feuilles de contacts d'un classeur sont réunies.
+- Trie les contacts par nom puis par numéro.
+- Plusieurs numéros différents sous un même nom reçoivent les suffixes `I`, `II`, `III`, `IV`… après suppression des doublons exacts. Un nom avec un seul numéro reste inchangé ; les lignes sans nom ou sans numéro ne sont pas numérotées.
+- Propose les noms proches (accents/casse ou une lettre ajoutée, retirée ou remplacée). Chaque regroupement nécessite une confirmation et le choix du nom à conserver. « Garder séparés » ignore la suggestion ; « Annuler mes choix » restaure les contacts importés. La recherche est indicative, limitée à 100 suggestions, et ne garantit pas de trouver tous les homonymes ou variantes.
 - Lit les vCard 2.1, 3.0 et 4.0 : lignes pliées, encodage quoted-printable, caractères échappés, fichiers UTF-8, UTF-16 ou Windows-1252.
 - Nom du contact : `FN`, sinon `N` (prénom nom), sinon `ORG` ; « Sans nom » à défaut.
 - Numéros mis en forme par paires (`06 12 34 56 78`) pour la France métropolitaine et les départements d'outre-mer (+33, +262, +590, +594, +596) ; les autres pays restent en forme internationale (`+4915123456789`).
 - Colonne **Type** : Mobile, Fixe, International ou Inconnu.
 - Doublons : une ligne identique (même nom, même numéro) n'est gardée qu'une fois ; un numéro présent sous plusieurs noms est conservé et signalé dans le bilan.
 - Deux exports : tous les contacts, ou seulement ceux qui ont un numéro.
+- Choix du format : Excel ou CSV pour Google Contacts (en-têtes `First Name`, `Phone 1 - Label`, `Phone 1 - Value`). Le nom complet reste dans le champ prénom, sans découpage supposé entre prénom et nom. Accents, zéros et suffixes romains sont conservés. Au-delà de 3 000 contacts, des liens permettent de télécharger chaque partie séparément, conformément à l'[aide Google](https://support.google.com/contacts/answer/15147365?hl=fr). Importez le CSV directement dans Google Contacts, sans le réenregistrer dans un tableur.
 - Rien n'est envoyé sur un serveur : le fichier est lu et converti dans le navigateur.
 
 ## Fichier produit
@@ -31,17 +36,22 @@ Une feuille « Contacts », trois colonnes, un numéro par ligne.
 
 ## Utilisation
 
-1. Ouvrez la page et déposez votre fichier `.vcf`, ou choisissez-le sur votre appareil.
+1. Ouvrez la page et déposez votre fichier `.vcf`, `.vcard`, `.csv`, `.tsv`, `.xlsx`, `.xls` ou `.ods`, ou choisissez-le sur votre appareil.
 2. Cliquez sur « Convertir en Excel » : le bilan affiche les contacts lus, les numéros extraits et les points à vérifier.
 3. Téléchargez « Tous les contacts » ou « Avec téléphone uniquement ».
 
 Le fichier `.vcf` s'obtient par l'export de votre carnet d'adresses (téléphone, Google Contacts, iCloud, Outlook).
 
+Pour un tableau, utilisez une ligne d'en-tête comme `Prénom;Nom;Téléphone` ou `Name,Phone 1 - Value`. Les séparateurs virgule, point-virgule et tabulation sont reconnus. Conservez les téléphones en texte pour préserver leurs zéros initiaux. Les colonnes non reconnues ne sont pas devinées.
+
 ## Limites
 
 - Seuls le nom et les numéros sont exportés, pas les adresses e-mail ni postales.
 - Les numéros hors France sont conservés tels quels, sans mise en forme.
-- La génération du fichier Excel repose sur la bibliothèque SheetJS chargée depuis un CDN : une connexion est nécessaire au chargement de la page.
+- Fichier limité à 10 Mo ; tableaux limités à 50 000 lignes et 256 colonnes. Les classeurs protégés par mot de passe ne sont pas pris en charge.
+- Un zéro initial déjà perdu dans une cellule numérique ne peut pas être reconstruit. Un avertissement invite à vérifier ces cellules.
+- Les PDF, images et formats propriétaires ne sont pas pris en charge.
+- SheetJS 0.20.3 est fourni localement dans `vendor/`, avec sa licence ; aucun CDN tiers n'est nécessaire.
 
 ## Développement
 

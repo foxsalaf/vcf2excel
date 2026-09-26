@@ -4,10 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VCF to Excel — Convertissez vos contacts en Excel</title>
-    <meta name="description" content="Convertissez vos contacts VCF en fichier Excel depuis votre navigateur. Formatage des numéros, signalement des doublons et export .xlsx.">
+    <meta name="description" content="Importez et organisez vos contacts VCF, CSV, Excel, TSV ou ODS. Numéros harmonisés, doublons signalés et export Excel trié, dans votre navigateur.">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="styles.css">
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="contact-import.js"></script>
+    <script src="contact-review.js"></script>
+    <script src="contact-export.js"></script>
+    <link rel="stylesheet" href="styles.css?v=googlecsv">
 </head>
 <body>
     <a class="skip-link" href="#converter">Aller au convertisseur</a>
@@ -19,21 +22,21 @@
     </header>
     <div class="container">
         <div class="intro">
-            <div><h1>Vos contacts.<br><em>Prêts pour Excel.</em></h1><p class="subtitle">Importez un fichier VCF pour commencer.</p></div>
+            <div><h1>Vos contacts.<br><em>Prêts pour Excel.</em></h1><p class="subtitle">Importez votre carnet. Retrouvez vos contacts triés et organisés.</p></div>
             <div class="privacy-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v5c0 5-8 10-8 10S4 16 4 11V6z"/><path d="m8 12 3 3 5-6"/></svg>Traitement sur votre appareil</div>
         </div>
         <main class="workspace" id="converter">
             <div class="main-panel">
                 <section class="upload-section" aria-labelledby="import-title">
-                    <div class="section-heading"><span class="step-number" aria-hidden="true">01</span><h2 id="import-title">Importer vos contacts</h2><span class="format-badge">.vcf</span></div>
-                    <div class="upload-area" id="uploadArea" role="button" tabindex="0" aria-label="Choisir un fichier VCF ou le déposer ici">
+                    <div class="section-heading"><span class="step-number" aria-hidden="true">01</span><h2 id="import-title">Importer vos contacts</h2><span class="format-badge">7 formats</span></div>
+                    <div class="upload-area" id="uploadArea" role="button" tabindex="0" aria-label="Choisir un fichier de contacts ou le déposer ici">
                         <div class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6m-8 9v-6m-3 3 3-3 3 3"/></svg></div>
-                        <div class="upload-text">Déposez votre fichier VCF ici</div>
+                        <div class="upload-text">Déposez votre fichier de contacts</div>
                         <div class="upload-subtext">ou sélectionnez-le sur votre appareil</div>
                         <span class="browse-label" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7zm0 1h18"/></svg>Choisir un fichier</span>
-                        <input type="file" class="file-input" id="fileInput" accept=".vcf" aria-label="Fichier de contacts VCF">
+                        <input type="file" class="file-input" id="fileInput" accept=".vcf,.vcard,.csv,.tsv,.xlsx,.xls,.ods" aria-label="Fichier de contacts VCF, CSV, Excel, TSV ou ODS">
                     </div>
-                    <p class="upload-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></svg>Utilisez le fichier .vcf exporté depuis votre carnet d’adresses.</p>
+                    <p class="upload-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></svg>VCF, CSV, Excel (.xlsx, .xls), TSV ou ODS · 10 Mo maximum.</p>
                     <p id="statusMessage" role="status" aria-live="polite" hidden></p>
                     <div class="file-info" id="fileInfo" style="display:none" aria-live="polite"><div class="file-name" id="fileName"></div><div class="file-size" id="fileSize"></div></div>
                     <div class="convert-action"><button class="btn" id="convertBtn" style="display:none" onclick="convertFile()">Convertir en Excel</button></div>
@@ -48,18 +51,32 @@
                     <div class="stat-card"><div class="stat-number" id="duplicatesCount">0</div><div class="stat-label">Doublons</div></div>
                 </div></section>
                 <section class="warning-section" id="warningSection" aria-live="polite"><div class="warning-title">Points à vérifier</div><ul class="warning-list" id="warningList"></ul></section>
+                <section class="review-section" id="reviewSection" aria-labelledby="review-title" style="display:none">
+                    <h2 id="review-title">Ces noms désignent-ils la même personne ?</h2>
+                    <p>Vérifiez les noms et numéros. Aucun regroupement sans votre confirmation.</p>
+                    <p id="reviewSummary" role="status"></p>
+                    <div id="reviewList"></div>
+                    <button type="button" class="btn" id="undoReview" onclick="annulerRegroupements()" style="display:none">Annuler mes choix</button>
+                </section>
                 <section class="result-section" id="resultSection" aria-labelledby="result-title">
-                    <div class="success-heading"><span class="success-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><h3 id="result-title">Votre fichier Excel est prêt</h3></div>
-                    <div class="export-options"><p>Choisissez les contacts à inclure dans votre fichier .xlsx.</p><div class="export-buttons"><button class="btn" onclick="downloadFile(false)">Tous les contacts</button><button class="btn btn-success" onclick="downloadFile(true)">Avec téléphone uniquement</button></div></div>
+                    <div class="success-heading"><span class="success-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><h3 id="result-title">Vos contacts sont prêts</h3></div>
+                    <div class="export-options">
+                        <label for="exportFormat">Format du fichier</label>
+                        <select id="exportFormat"><option value="xlsx">Excel (.xlsx)</option><option value="google">CSV pour Google Contacts (.csv)</option></select>
+                        <p>Choisissez les contacts à inclure. Noms et téléphones uniquement.</p>
+                        <div class="export-buttons"><button class="btn" onclick="downloadFile(false)">Tous les contacts</button><button class="btn btn-success" onclick="downloadFile(true)">Avec téléphone uniquement</button></div>
+                        <div id="csvDownloads"></div>
+                        <p class="google-help">Pour Google : choisissez le format CSV, puis dans <a href="https://contacts.google.com/" target="_blank" rel="noopener noreferrer">Google Contacts</a>, cliquez sur Importer et sélectionnez le fichier téléchargé.</p>
+                    </div>
                     <button class="btn btn-secondary" onclick="resetApp()">Importer un autre fichier</button>
                 </section>
             </div>
             <aside class="aside" aria-label="À propos de votre export">
-                <section class="output-card"><div class="file-tag"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18M3 15h18"/></svg>EXPORT EXCEL · .XLSX</div><h2>Un tableau, l’essentiel.</h2><p>Un nom, un numéro, son type.<br>Chaque information à sa place.</p><div class="table-wrap"><table aria-label="Exemple fictif de structure du fichier Excel"><thead><tr><th scope="col">Nom</th><th scope="col">Numéro</th><th scope="col">Type</th></tr></thead><tbody><tr><td>Contact A</td><td>06 12 34 56 78</td><td>Mobile</td></tr><tr><td>Contact B</td><td>01 23 45 67 89</td><td>Fixe</td></tr><tr><td>Contact C</td><td>Aucun numéro</td><td>—</td></tr></tbody></table></div><span class="sample-caption">Exemple fictif de fichier exporté</span></section>
+                <section class="output-card"><div class="file-tag"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18M3 15h18"/></svg>EXPORT EXCEL · .XLSX</div><h2>Un tableau, l’essentiel.</h2><p>Noms triés, numéros harmonisés.<br>Doublons exacts retirés.</p><div class="table-wrap"><table aria-label="Exemple fictif de structure du fichier Excel"><thead><tr><th scope="col">Nom</th><th scope="col">Numéro</th><th scope="col">Type</th></tr></thead><tbody><tr><td>Contact A</td><td>06 12 34 56 78</td><td>Mobile</td></tr><tr><td>Contact B</td><td>01 23 45 67 89</td><td>Fixe</td></tr><tr><td>Contact C</td><td>Aucun numéro</td><td>—</td></tr></tbody></table></div><span class="sample-caption">Exemple fictif de fichier exporté</span></section>
                 <section class="trust-card"><div class="trust-title"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg>Vos contacts restent avec vous</div><p>Votre fichier est traité dans le navigateur, sans envoi à un serveur.</p></section>
             </aside>
         </main>
-        <div class="workflow" aria-label="Les trois étapes"><div class="workflow-item"><strong>1</strong><span>Importez</span> votre fichier VCF</div><div class="workflow-item"><strong>2</strong><span>Vérifiez</span> le bilan de conversion</div><div class="workflow-item"><strong>3</strong><span>Téléchargez</span> votre fichier Excel</div></div>
+        <div class="workflow" aria-label="Les trois étapes"><div class="workflow-item"><strong>1</strong><span>Importez</span> votre carnet de contacts</div><div class="workflow-item"><strong>2</strong><span>Vérifiez</span> le bilan de conversion</div><div class="workflow-item"><strong>3</strong><span>Téléchargez</span> votre fichier Excel</div></div>
         <footer class="footer"><span>VCF to Excel · Un outil libre, pour vos contacts.</span><a href="https://github.com/foxsalaf/vcf2excel/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Licence MIT ↗</a></footer>
     </div>
 
@@ -69,6 +86,11 @@
         let duplicateNumbers = new Set(); // Numéros rencontrés sous plusieurs noms
         let stats = creerStats();
         let warnings = [];
+        let reviewRows = [];
+        let reviewOriginal = null;
+        let ignoredPairs = new Set();
+        let mergeCount = 0;
+        let csvURLs = [];
 
         function creerStats() {
             return {
@@ -241,12 +263,15 @@
             const lines = content.replace(/^﻿/, '').split(/\r\n|\n|\r/);
             const contacts = parseVCFContacts(lines);
 
+            return organiserContacts(contacts.map(extractContactInfo));
+        }
+
+        function organiserContacts(contacts) {
             stats.totalContacts = contacts.length;
             const excelData = [];
             const nomsParNumero = new Map();
 
-            for (const contact of contacts) {
-                const info = extractContactInfo(contact);
+            for (const info of contacts) {
                 const nom = info.name.trim() || 'Sans nom';
 
                 if (info.phones.length === 0) {
@@ -298,6 +323,64 @@
             }
         }
 
+        function trierContacts(rows) {
+            reviewRows = rows.map(row => ({ ...row }));
+            const compare = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
+            rows.sort((a, b) => compare.compare(a.nom, b.nom) || compare.compare(a.numero, b.numero));
+            const groups = new Map();
+            for (const row of rows) {
+                if (row.nom === 'Sans nom' || row.numero === 'Aucun numéro') continue;
+                if (!groups.has(row.nom)) groups.set(row.nom, []);
+                groups.get(row.nom).push(row);
+            }
+            for (const [name, group] of groups) {
+                if (group.length < 2) continue;
+                group.forEach((row, index) => { row.nom = `${name} ${chiffresRomains(index + 1)}`; });
+            }
+            return rows;
+        }
+
+        function chiffresRomains(number) {
+            const symbols = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+                [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+                [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+            let result = '';
+            for (const [value, symbol] of symbols) {
+                while (number >= value) { result += symbol; number -= value; }
+            }
+            return result;
+        }
+
+        function importerContacts(buffer, filename) {
+            const extension = filename.split('.').pop().toLowerCase();
+            stats = creerStats(); warnings = []; duplicateNumbers.clear();
+            if (['vcf', 'vcard'].includes(extension)) {
+                const { text, encoding } = decoderFichierVcf(buffer);
+                return { rows: trierContacts(processVCFFile(text)), encoding };
+            }
+            let result, encoding;
+            if (['csv', 'tsv'].includes(extension)) {
+                const decoded = decoderFichierVcf(buffer);
+                encoding = decoded.encoding;
+                const table = ContactImport.parseDelimited(decoded.text, extension);
+                result = ContactImport.fromRows(table, filename, normaliserNumero);
+                if (!result) throw new Error('Colonnes non reconnues. Ajoutez une première ligne avec Nom, Prénom, Téléphone ou Phone 1 - Value.');
+            } else if (['xlsx', 'xls', 'ods'].includes(extension)) {
+                if (typeof XLSX === 'undefined') throw new Error('Le lecteur Excel n’a pas pu être chargé. Rechargez la page.');
+                let workbook;
+                try {
+                    workbook = XLSX.read(buffer, { type: 'array', cellNF: true, cellHTML: false, cellFormula: false, sheetRows: ContactImport.MAX_ROWS + 2 });
+                } catch (_) {
+                    throw new Error('Ce classeur est illisible ou protégé par un mot de passe. Réexportez-le en CSV ou en Excel non protégé.');
+                }
+                result = ContactImport.fromWorkbook(workbook, XLSX, normaliserNumero);
+            } else {
+                throw new Error('Format non pris en charge. Choisissez un fichier VCF, CSV, Excel, TSV ou ODS.');
+            }
+            warnings.push(...result.notices);
+            return { rows: trierContacts(organiserContacts(result.contacts)), encoding };
+        }
+
         // --- Interface ---
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
@@ -306,6 +389,7 @@
         const statsSection = document.getElementById('statsSection');
         const warningSection = document.getElementById('warningSection');
         const resultSection = document.getElementById('resultSection');
+        const reviewSection = document.getElementById('reviewSection');
         const fileNameDisplay = document.getElementById('fileName');
         const fileSizeDisplay = document.getElementById('fileSize');
         const fileInfoDisplay = document.getElementById('fileInfo');
@@ -382,20 +466,27 @@
          * et de la taille, puis bouton de conversion.
          */
         function handleFile(file) {
-            if (!/\.(vcf|vcard)$/i.test(file.name)) {
+            effacerCSV();
+            if (!/\.(vcf|vcard|csv|tsv|xlsx|xls|ods)$/i.test(file.name)) {
                 resetApp();
-                afficherStatut(`« ${file.name} » n'est pas un fichier VCF. Choisissez un fichier .vcf.`, 'error');
+                afficherStatut(`« ${file.name} » : format non pris en charge. Choisissez VCF, CSV, Excel, TSV ou ODS.`, 'error');
                 return;
             }
 
+            if (file.size > 10 * 1024 * 1024) {
+                resetApp();
+                afficherStatut('Le fichier dépasse 10 Mo. Divisez-le en plusieurs fichiers avant import.', 'error');
+                return;
+            }
             selectedFile = file;
             convertedData = null;
+            reviewOriginal = null; reviewRows = []; ignoredPairs.clear(); mergeCount = 0;
             fileNameDisplay.textContent = file.name;
             fileSizeDisplay.textContent = formaterTaille(file.size);
             afficher(fileInfoDisplay);
             afficher(convertBtn, 'inline-block');
             restaurerBoutonConvertir();
-            masquer(progressSection, statsSection, warningSection, resultSection);
+            masquer(progressSection, statsSection, warningSection, resultSection, reviewSection);
             afficherStatut('');
         }
 
@@ -405,7 +496,7 @@
          */
         function convertFile() {
             if (!selectedFile) {
-                afficherStatut('Choisissez d\'abord un fichier VCF.', 'error');
+                afficherStatut('Choisissez d\'abord un fichier de contacts.', 'error');
                 return;
             }
 
@@ -418,19 +509,22 @@
             warnings = [];
             duplicateNumbers.clear();
 
+            const fileToRead = selectedFile;
             const reader = new FileReader();
             reader.onload = function(e) {
+                if (selectedFile !== fileToRead) return;
                 try {
-                    const { text, encoding } = decoderFichierVcf(e.target.result);
-                    convertedData = processVCFFile(text);
+                    const { rows, encoding } = importerContacts(e.target.result, fileToRead.name);
+                    convertedData = rows;
                     if (convertedData.length === 0) {
                         convertedData = null;
                         restaurerBoutonConvertir();
-                        afficherStatut('Aucun contact trouvé dans ce fichier. Vérifiez qu\'il s\'agit d\'un export VCF.', 'error');
+                        afficherStatut('Aucun contact trouvé. Vérifiez les noms et les téléphones dans le fichier source.', 'error');
                         return;
                     }
+                    reviewOriginal = { rows: reviewRows.map(row => ({...row})), stats: {...stats}, warnings: [...warnings] };
                     displayResults();
-                    let message = `${stats.totalContacts} contact${stats.totalContacts > 1 ? 's' : ''} lu${stats.totalContacts > 1 ? 's' : ''}, ${stats.contactsAddedToExcel} ligne${stats.contactsAddedToExcel > 1 ? 's' : ''} prête${stats.contactsAddedToExcel > 1 ? 's' : ''} pour Excel.`;
+                    let message = `${stats.totalContacts} contact${stats.totalContacts > 1 ? 's' : ''} lu${stats.totalContacts > 1 ? 's' : ''}, ${stats.contactsAddedToExcel} ligne${stats.contactsAddedToExcel > 1 ? 's' : ''} triée${stats.contactsAddedToExcel > 1 ? 's' : ''} par nom et prête${stats.contactsAddedToExcel > 1 ? 's' : ''} pour Excel.`;
                     if (stats.duplicatesRemoved > 0) {
                         message += ` ${stats.duplicatesRemoved} doublon${stats.duplicatesRemoved > 1 ? 's' : ''} retiré${stats.duplicatesRemoved > 1 ? 's' : ''}.`;
                     }
@@ -441,19 +535,90 @@
                 } catch (error) {
                     console.error('Erreur lors du traitement du fichier VCF :', error);
                     restaurerBoutonConvertir();
-                    afficherStatut('Le fichier n\'a pas pu être converti. Vérifiez qu\'il s\'agit d\'un export VCF valide.', 'error');
+                    afficherStatut(error.message || 'Le fichier n’a pas pu être converti. Vérifiez son format.', 'error');
                 }
             };
             reader.onerror = () => {
+                if (selectedFile !== fileToRead) return;
                 restaurerBoutonConvertir();
                 afficherStatut('Le fichier n\'a pas pu être lu.', 'error');
             };
-            reader.readAsArrayBuffer(selectedFile);
+            reader.readAsArrayBuffer(fileToRead);
         }
 
         function afficherCompteur(id, valeur) {
             const element = document.getElementById(id);
             if (element) element.textContent = valeur;
+        }
+
+        function afficherSuggestions() {
+            const list = document.getElementById('reviewList');
+            list.innerHTML = '';
+            const { pairs, limited } = ContactReview.suggest(reviewRows, ignoredPairs);
+            if (!pairs.length && !mergeCount && !ignoredPairs.size && !limited) { masquer(reviewSection); return; }
+            afficher(reviewSection);
+            document.getElementById('reviewSummary').textContent =
+                `${pairs.length} suggestion${pairs.length > 1 ? 's' : ''}. ${mergeCount} regroupement${mergeCount > 1 ? 's' : ''} confirmé${mergeCount > 1 ? 's' : ''}.` +
+                (limited ? ' Recherche limitée : toutes les ressemblances ne sont pas affichées.' : '');
+            const undo = document.getElementById('undoReview');
+            if (mergeCount || ignoredPairs.size) afficher(undo, 'inline-block'); else masquer(undo);
+            for (const [a, b] of pairs) {
+                const card = document.createElement('div'); card.className = 'review-pair';
+                for (const name of [a, b]) {
+                    const line = document.createElement('p');
+                    const title = document.createElement('strong'); title.textContent = name;
+                    const numbers = document.createElement('span');
+                    numbers.textContent = reviewRows.filter(row => row.nom === name).map(row => row.numero).join(' · ');
+                    line.appendChild(title); line.appendChild(numbers); card.appendChild(line);
+                }
+                const label = document.createElement('label'); label.textContent = 'Nom à conserver ';
+                const select = document.createElement('select');
+                for (const name of [a, b]) {
+                    const option = document.createElement('option'); option.value = name; option.textContent = name; select.appendChild(option);
+                }
+                label.appendChild(select); card.appendChild(label);
+                const actions = document.createElement('div'); actions.className = 'review-actions';
+                const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn'; yes.textContent = 'Même personne : regrouper';
+                yes.addEventListener('click', () => regrouperNoms(select.value === a ? b : a, select.value));
+                const no = document.createElement('button'); no.type = 'button'; no.className = 'btn'; no.textContent = 'Garder séparés';
+                no.addEventListener('click', () => { ignoredPairs.add(ContactReview.pairKey(a, b)); afficherSuggestions(); afficherStatut('Ces contacts restent séparés.', 'info'); });
+                actions.appendChild(yes); actions.appendChild(no); card.appendChild(actions); list.appendChild(card);
+            }
+        }
+
+        function regrouperNoms(from, into) {
+            effacerCSV();
+            const merged = ContactReview.merge(reviewRows, from, into);
+            stats.duplicatesRemoved += reviewRows.length - merged.length;
+            convertedData = trierContacts(merged);
+            stats.contactsAddedToExcel = convertedData.length;
+            warnings = reviewOriginal.warnings.filter(message => !message.startsWith('Le numéro '));
+            stats.duplicatesDetected = 0;
+            const namesByPhone = new Map();
+            for (const row of reviewRows) {
+                if (row.numero === 'Aucun numéro') continue;
+                if (!namesByPhone.has(row.numero)) namesByPhone.set(row.numero, new Set());
+                namesByPhone.get(row.numero).add(row.nom);
+            }
+            for (const [phone, names] of namesByPhone) {
+                if (names.size > 1) {
+                    stats.duplicatesDetected += names.size - 1;
+                    warnings.push(`Le numéro ${phone} apparaît sous plusieurs noms : ${[...names].join(', ')}.`);
+                }
+            }
+            mergeCount++;
+            displayResults();
+            afficherStatut(`Regroupement confirmé sous « ${into} ». L’export a été actualisé.`, 'success');
+        }
+
+        function annulerRegroupements() {
+            effacerCSV();
+            if (!reviewOriginal) return;
+            convertedData = trierContacts(reviewOriginal.rows.map(row => ({...row})));
+            stats = {...reviewOriginal.stats}; warnings = [...reviewOriginal.warnings];
+            ignoredPairs.clear(); mergeCount = 0;
+            displayResults();
+            afficherStatut('Les regroupements ont été annulés. Les noms importés sont rétablis.', 'info');
         }
 
         /**
@@ -486,6 +651,7 @@
             }
 
             afficher(resultSection);
+            afficherSuggestions();
             masquer(convertBtn);
             restaurerBoutonConvertir();
         }
@@ -494,13 +660,43 @@
          * Génère et télécharge le fichier Excel (.xlsx).
          * @param {boolean} onlyWithPhone - true pour exclure les contacts sans numéro
          */
+        function effacerCSV() {
+            for (const url of csvURLs) URL.revokeObjectURL(url);
+            csvURLs = [];
+            document.getElementById('csvDownloads').innerHTML = '';
+        }
+
+        function downloadGoogleCSV(onlyWithPhone) {
+            const rows = onlyWithPhone ? convertedData.filter(row => row.numero !== 'Aucun numéro') : convertedData;
+            if (!rows.length) { afficherStatut('Aucun contact avec téléphone à exporter.', 'info'); return; }
+            effacerCSV();
+            const parts = ContactExport.googleParts(rows);
+            const base = selectedFile ? selectedFile.name.replace(/\.[^.]+$/, '') : 'Contacts';
+            const container = document.getElementById('csvDownloads');
+            parts.forEach((csv, index) => {
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
+                csvURLs.push(url); link.href = url;
+                link.download = `${base}_google${parts.length > 1 ? '_partie_' + (index + 1) : ''}.csv`;
+                link.textContent = parts.length > 1 ? `Télécharger le CSV ${index + 1} / ${parts.length}` : 'Télécharger à nouveau le CSV Google';
+                container.appendChild(link);
+                if (parts.length === 1) link.click();
+            });
+            afficherStatut(parts.length === 1
+                ? `CSV Google préparé : ${rows.length} contacts. Importez le fichier dans Google Contacts.`
+                : `${parts.length} CSV préparés (3 000 contacts maximum par fichier). Téléchargez puis importez chaque partie.`, 'success');
+        }
+
         function downloadFile(onlyWithPhone = false) {
             if (!convertedData || convertedData.length === 0) {
-                afficherStatut('Aucune donnée à exporter. Convertissez d\'abord un fichier VCF.', 'error');
+                afficherStatut('Aucune donnée à exporter. Convertissez d\'abord un fichier de contacts.', 'error');
                 return;
             }
 
             try {
+                if (document.getElementById('exportFormat').value === 'google') {
+                    downloadGoogleCSV(onlyWithPhone); return;
+                }
                 if (typeof XLSX === 'undefined') {
                     afficherStatut('La bibliothèque de génération Excel n\'a pas pu être chargée. Vérifiez votre connexion, puis rechargez la page.', 'error');
                     return;
@@ -530,7 +726,7 @@
                 ];
                 XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts');
 
-                const baseName = selectedFile ? selectedFile.name.replace(/\.(vcf|vcard)$/i, '') : 'Contacts';
+                const baseName = selectedFile ? selectedFile.name.replace(/\.(vcf|vcard|csv|tsv|xlsx|xls|ods)$/i, '') : 'Contacts';
                 const outputFileName = `${baseName}_${exportType}.xlsx`;
                 XLSX.writeFile(workbook, outputFileName);
 
@@ -548,6 +744,9 @@
          * Remet la page à son état initial.
          */
         function resetApp() {
+            effacerCSV();
+            reviewOriginal = null; reviewRows = []; ignoredPairs.clear(); mergeCount = 0;
+            masquer(reviewSection);
             selectedFile = null;
             convertedData = null;
             warnings = [];
