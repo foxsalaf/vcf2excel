@@ -8,7 +8,9 @@
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <script src="vendor/xlsx.full.min.js"></script>
     <script src="contact-import.js"></script>
-    <link rel="stylesheet" href="styles.css?v=multiformat">
+    <script src="contact-review.js"></script>
+    <script src="contact-export.js"></script>
+    <link rel="stylesheet" href="styles.css?v=googlecsv">
 </head>
 <body>
     <a class="skip-link" href="#converter">Aller au convertisseur</a>
@@ -49,9 +51,23 @@
                     <div class="stat-card"><div class="stat-number" id="duplicatesCount">0</div><div class="stat-label">Doublons</div></div>
                 </div></section>
                 <section class="warning-section" id="warningSection" aria-live="polite"><div class="warning-title">Points à vérifier</div><ul class="warning-list" id="warningList"></ul></section>
+                <section class="review-section" id="reviewSection" aria-labelledby="review-title" style="display:none">
+                    <h2 id="review-title">Ces noms désignent-ils la même personne ?</h2>
+                    <p>Vérifiez les noms et numéros. Aucun regroupement sans votre confirmation.</p>
+                    <p id="reviewSummary" role="status"></p>
+                    <div id="reviewList"></div>
+                    <button type="button" class="btn" id="undoReview" onclick="annulerRegroupements()" style="display:none">Annuler mes choix</button>
+                </section>
                 <section class="result-section" id="resultSection" aria-labelledby="result-title">
-                    <div class="success-heading"><span class="success-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><h3 id="result-title">Votre fichier Excel est prêt</h3></div>
-                    <div class="export-options"><p>Choisissez les contacts à inclure dans votre fichier .xlsx.</p><div class="export-buttons"><button class="btn" onclick="downloadFile(false)">Tous les contacts</button><button class="btn btn-success" onclick="downloadFile(true)">Avec téléphone uniquement</button></div></div>
+                    <div class="success-heading"><span class="success-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span><h3 id="result-title">Vos contacts sont prêts</h3></div>
+                    <div class="export-options">
+                        <label for="exportFormat">Format du fichier</label>
+                        <select id="exportFormat"><option value="xlsx">Excel (.xlsx)</option><option value="google">CSV pour Google Contacts (.csv)</option></select>
+                        <p>Choisissez les contacts à inclure. Noms et téléphones uniquement.</p>
+                        <div class="export-buttons"><button class="btn" onclick="downloadFile(false)">Tous les contacts</button><button class="btn btn-success" onclick="downloadFile(true)">Avec téléphone uniquement</button></div>
+                        <div id="csvDownloads"></div>
+                        <p class="google-help">Pour Google : choisissez le format CSV, puis dans <a href="https://contacts.google.com/" target="_blank" rel="noopener noreferrer">Google Contacts</a>, cliquez sur Importer et sélectionnez le fichier téléchargé.</p>
+                    </div>
                     <button class="btn btn-secondary" onclick="resetApp()">Importer un autre fichier</button>
                 </section>
             </div>
@@ -70,6 +86,11 @@
         let duplicateNumbers = new Set(); // Numéros rencontrés sous plusieurs noms
         let stats = creerStats();
         let warnings = [];
+        let reviewRows = [];
+        let reviewOriginal = null;
+        let ignoredPairs = new Set();
+        let mergeCount = 0;
+        let csvURLs = [];
 
         function creerStats() {
             return {
@@ -303,6 +324,7 @@
         }
 
         function trierContacts(rows) {
+            reviewRows = rows.map(row => ({ ...row }));
             const compare = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
             rows.sort((a, b) => compare.compare(a.nom, b.nom) || compare.compare(a.numero, b.numero));
             const groups = new Map();
@@ -367,6 +389,7 @@
         const statsSection = document.getElementById('statsSection');
         const warningSection = document.getElementById('warningSection');
         const resultSection = document.getElementById('resultSection');
+        const reviewSection = document.getElementById('reviewSection');
         const fileNameDisplay = document.getElementById('fileName');
         const fileSizeDisplay = document.getElementById('fileSize');
         const fileInfoDisplay = document.getElementById('fileInfo');
@@ -443,6 +466,7 @@
          * et de la taille, puis bouton de conversion.
          */
         function handleFile(file) {
+            effacerCSV();
             if (!/\.(vcf|vcard|csv|tsv|xlsx|xls|ods)$/i.test(file.name)) {
                 resetApp();
                 afficherStatut(`« ${file.name} » : format non pris en charge. Choisissez VCF, CSV, Excel, TSV ou ODS.`, 'error');
@@ -456,12 +480,13 @@
             }
             selectedFile = file;
             convertedData = null;
+            reviewOriginal = null; reviewRows = []; ignoredPairs.clear(); mergeCount = 0;
             fileNameDisplay.textContent = file.name;
             fileSizeDisplay.textContent = formaterTaille(file.size);
             afficher(fileInfoDisplay);
             afficher(convertBtn, 'inline-block');
             restaurerBoutonConvertir();
-            masquer(progressSection, statsSection, warningSection, resultSection);
+            masquer(progressSection, statsSection, warningSection, resultSection, reviewSection);
             afficherStatut('');
         }
 
@@ -497,6 +522,7 @@
                         afficherStatut('Aucun contact trouvé. Vérifiez les noms et les téléphones dans le fichier source.', 'error');
                         return;
                     }
+                    reviewOriginal = { rows: reviewRows.map(row => ({...row})), stats: {...stats}, warnings: [...warnings] };
                     displayResults();
                     let message = `${stats.totalContacts} contact${stats.totalContacts > 1 ? 's' : ''} lu${stats.totalContacts > 1 ? 's' : ''}, ${stats.contactsAddedToExcel} ligne${stats.contactsAddedToExcel > 1 ? 's' : ''} triée${stats.contactsAddedToExcel > 1 ? 's' : ''} par nom et prête${stats.contactsAddedToExcel > 1 ? 's' : ''} pour Excel.`;
                     if (stats.duplicatesRemoved > 0) {
@@ -523,6 +549,76 @@
         function afficherCompteur(id, valeur) {
             const element = document.getElementById(id);
             if (element) element.textContent = valeur;
+        }
+
+        function afficherSuggestions() {
+            const list = document.getElementById('reviewList');
+            list.innerHTML = '';
+            const { pairs, limited } = ContactReview.suggest(reviewRows, ignoredPairs);
+            if (!pairs.length && !mergeCount && !ignoredPairs.size && !limited) { masquer(reviewSection); return; }
+            afficher(reviewSection);
+            document.getElementById('reviewSummary').textContent =
+                `${pairs.length} suggestion${pairs.length > 1 ? 's' : ''}. ${mergeCount} regroupement${mergeCount > 1 ? 's' : ''} confirmé${mergeCount > 1 ? 's' : ''}.` +
+                (limited ? ' Recherche limitée : toutes les ressemblances ne sont pas affichées.' : '');
+            const undo = document.getElementById('undoReview');
+            if (mergeCount || ignoredPairs.size) afficher(undo, 'inline-block'); else masquer(undo);
+            for (const [a, b] of pairs) {
+                const card = document.createElement('div'); card.className = 'review-pair';
+                for (const name of [a, b]) {
+                    const line = document.createElement('p');
+                    const title = document.createElement('strong'); title.textContent = name;
+                    const numbers = document.createElement('span');
+                    numbers.textContent = reviewRows.filter(row => row.nom === name).map(row => row.numero).join(' · ');
+                    line.appendChild(title); line.appendChild(numbers); card.appendChild(line);
+                }
+                const label = document.createElement('label'); label.textContent = 'Nom à conserver ';
+                const select = document.createElement('select');
+                for (const name of [a, b]) {
+                    const option = document.createElement('option'); option.value = name; option.textContent = name; select.appendChild(option);
+                }
+                label.appendChild(select); card.appendChild(label);
+                const actions = document.createElement('div'); actions.className = 'review-actions';
+                const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn'; yes.textContent = 'Même personne : regrouper';
+                yes.addEventListener('click', () => regrouperNoms(select.value === a ? b : a, select.value));
+                const no = document.createElement('button'); no.type = 'button'; no.className = 'btn'; no.textContent = 'Garder séparés';
+                no.addEventListener('click', () => { ignoredPairs.add(ContactReview.pairKey(a, b)); afficherSuggestions(); afficherStatut('Ces contacts restent séparés.', 'info'); });
+                actions.appendChild(yes); actions.appendChild(no); card.appendChild(actions); list.appendChild(card);
+            }
+        }
+
+        function regrouperNoms(from, into) {
+            effacerCSV();
+            const merged = ContactReview.merge(reviewRows, from, into);
+            stats.duplicatesRemoved += reviewRows.length - merged.length;
+            convertedData = trierContacts(merged);
+            stats.contactsAddedToExcel = convertedData.length;
+            warnings = reviewOriginal.warnings.filter(message => !message.startsWith('Le numéro '));
+            stats.duplicatesDetected = 0;
+            const namesByPhone = new Map();
+            for (const row of reviewRows) {
+                if (row.numero === 'Aucun numéro') continue;
+                if (!namesByPhone.has(row.numero)) namesByPhone.set(row.numero, new Set());
+                namesByPhone.get(row.numero).add(row.nom);
+            }
+            for (const [phone, names] of namesByPhone) {
+                if (names.size > 1) {
+                    stats.duplicatesDetected += names.size - 1;
+                    warnings.push(`Le numéro ${phone} apparaît sous plusieurs noms : ${[...names].join(', ')}.`);
+                }
+            }
+            mergeCount++;
+            displayResults();
+            afficherStatut(`Regroupement confirmé sous « ${into} ». L’export a été actualisé.`, 'success');
+        }
+
+        function annulerRegroupements() {
+            effacerCSV();
+            if (!reviewOriginal) return;
+            convertedData = trierContacts(reviewOriginal.rows.map(row => ({...row})));
+            stats = {...reviewOriginal.stats}; warnings = [...reviewOriginal.warnings];
+            ignoredPairs.clear(); mergeCount = 0;
+            displayResults();
+            afficherStatut('Les regroupements ont été annulés. Les noms importés sont rétablis.', 'info');
         }
 
         /**
@@ -555,6 +651,7 @@
             }
 
             afficher(resultSection);
+            afficherSuggestions();
             masquer(convertBtn);
             restaurerBoutonConvertir();
         }
@@ -563,6 +660,33 @@
          * Génère et télécharge le fichier Excel (.xlsx).
          * @param {boolean} onlyWithPhone - true pour exclure les contacts sans numéro
          */
+        function effacerCSV() {
+            for (const url of csvURLs) URL.revokeObjectURL(url);
+            csvURLs = [];
+            document.getElementById('csvDownloads').innerHTML = '';
+        }
+
+        function downloadGoogleCSV(onlyWithPhone) {
+            const rows = onlyWithPhone ? convertedData.filter(row => row.numero !== 'Aucun numéro') : convertedData;
+            if (!rows.length) { afficherStatut('Aucun contact avec téléphone à exporter.', 'info'); return; }
+            effacerCSV();
+            const parts = ContactExport.googleParts(rows);
+            const base = selectedFile ? selectedFile.name.replace(/\.[^.]+$/, '') : 'Contacts';
+            const container = document.getElementById('csvDownloads');
+            parts.forEach((csv, index) => {
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
+                csvURLs.push(url); link.href = url;
+                link.download = `${base}_google${parts.length > 1 ? '_partie_' + (index + 1) : ''}.csv`;
+                link.textContent = parts.length > 1 ? `Télécharger le CSV ${index + 1} / ${parts.length}` : 'Télécharger à nouveau le CSV Google';
+                container.appendChild(link);
+                if (parts.length === 1) link.click();
+            });
+            afficherStatut(parts.length === 1
+                ? `CSV Google préparé : ${rows.length} contacts. Importez le fichier dans Google Contacts.`
+                : `${parts.length} CSV préparés (3 000 contacts maximum par fichier). Téléchargez puis importez chaque partie.`, 'success');
+        }
+
         function downloadFile(onlyWithPhone = false) {
             if (!convertedData || convertedData.length === 0) {
                 afficherStatut('Aucune donnée à exporter. Convertissez d\'abord un fichier de contacts.', 'error');
@@ -570,6 +694,9 @@
             }
 
             try {
+                if (document.getElementById('exportFormat').value === 'google') {
+                    downloadGoogleCSV(onlyWithPhone); return;
+                }
                 if (typeof XLSX === 'undefined') {
                     afficherStatut('La bibliothèque de génération Excel n\'a pas pu être chargée. Vérifiez votre connexion, puis rechargez la page.', 'error');
                     return;
@@ -617,6 +744,9 @@
          * Remet la page à son état initial.
          */
         function resetApp() {
+            effacerCSV();
+            reviewOriginal = null; reviewRows = []; ignoredPairs.clear(); mergeCount = 0;
+            masquer(reviewSection);
             selectedFile = null;
             convertedData = null;
             warnings = [];
