@@ -12,6 +12,7 @@ Récupère et organise les contacts d'un fichier VCF, CSV, TSV, Excel (.xlsx/.xl
 
 - Reconnaît les colonnes courantes françaises, Google Contacts et Outlook : noms, prénoms et plusieurs téléphones. Les feuilles de contacts d'un classeur sont réunies.
 - Trie les contacts par nom puis par numéro.
+- Plusieurs numéros différents sous un même nom reçoivent les suffixes `I`, `II`, `III`, `IV`… après suppression des doublons exacts. Un nom avec un seul numéro reste inchangé ; les lignes sans nom ou sans numéro ne sont pas numérotées.
 - Lit les vCard 2.1, 3.0 et 4.0 : lignes pliées, encodage quoted-printable, caractères échappés, fichiers UTF-8, UTF-16 ou Windows-1252.
 - Nom du contact : `FN`, sinon `N` (prénom nom), sinon `ORG` ; « Sans nom » à défaut.
 - Numéros mis en forme par paires (`06 12 34 56 78`) pour la France métropolitaine et les départements d'outre-mer (+33, +262, +590, +594, +596) ; les autres pays restent en forme internationale (`+4915123456789`).

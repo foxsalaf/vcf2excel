@@ -304,7 +304,29 @@
 
         function trierContacts(rows) {
             const compare = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
-            return rows.sort((a, b) => compare.compare(a.nom, b.nom) || compare.compare(a.numero, b.numero));
+            rows.sort((a, b) => compare.compare(a.nom, b.nom) || compare.compare(a.numero, b.numero));
+            const groups = new Map();
+            for (const row of rows) {
+                if (row.nom === 'Sans nom' || row.numero === 'Aucun numéro') continue;
+                if (!groups.has(row.nom)) groups.set(row.nom, []);
+                groups.get(row.nom).push(row);
+            }
+            for (const [name, group] of groups) {
+                if (group.length < 2) continue;
+                group.forEach((row, index) => { row.nom = `${name} ${chiffresRomains(index + 1)}`; });
+            }
+            return rows;
+        }
+
+        function chiffresRomains(number) {
+            const symbols = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+                [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+                [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+            let result = '';
+            for (const [value, symbol] of symbols) {
+                while (number >= value) { result += symbol; number -= value; }
+            }
+            return result;
         }
 
         function importerContacts(buffer, filename) {

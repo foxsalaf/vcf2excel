@@ -25,7 +25,7 @@ test('French semicolon CSV combines first/last names, sorts and deduplicates can
 test('Google CSV ignores phone type labels and imports all value columns', () => {
     const result = importText('Name,Phone 1 - Type,Phone 1 - Value,Phone 2 - Type,Phone 2 - Value\nAlice,Mobile,0612345678,Home,0123456789');
     assert.equal(result.rows.length, 2);
-    assert.equal(result.rows[0].nom, 'Alice');
+    assert.equal(result.rows[0].nom, 'Alice I');
     assert.equal(result.rows[0].numero, '01 23 45 67 89');
 });
 test('Google multi-value phone cells retain both numbers', () => {
@@ -34,7 +34,7 @@ test('Google multi-value phone cells retain both numbers', () => {
 test('Outlook English CSV combines names and extracts mobile/business phones', () => {
     const result = importText('First Name,Last Name,Mobile Phone,Business Phone,E-mail Address\nAlice,Test,0612345678,0123456789,example@example.invalid');
     assert.equal(result.rows.length, 2);
-    assert.equal(result.rows[0].nom, 'Alice Test');
+    assert.equal(result.rows[0].nom, 'Alice Test I');
 });
 test('quoted commas, escaped quotes and embedded newlines are retained', () => {
     const rows = ContactImport.parseDelimited('Name,Phone,Notes\r\n"Test, ""Alice""",0612345678,"line 1\nline 2"', 'csv');
@@ -100,4 +100,27 @@ test('offset worksheet ranges retain numeric phone warnings and formatting', () 
     const result = ContactImport.fromWorkbook({SheetNames:['Contacts'],Sheets:{Contacts:sheet}}, XLSX, value => value);
     assert.equal(result.contacts[0].phones[0], '33612345678');
     assert.match(result.notices.join(' '), /cellules numériques/);
+});
+
+test('repeated names receive Roman suffixes after exact phone deduplication', () => {
+    const result = importText('Nom,Telephone\nAlice,0712345678\nAlice,0612345678\nAlice,+33612345678\nAlice,0123456789\nAlice,0512345678\nBob,0612345678');
+    assert.deepEqual(result.rows.map(r => r.nom), ['Alice I', 'Alice II', 'Alice III', 'Alice IV', 'Bob']);
+    assert.deepEqual(result.rows.slice(0, 4).map(r => r.numero), ['01 23 45 67 89', '05 12 34 56 78', '06 12 34 56 78', '07 12 34 56 78']);
+});
+
+test('Roman numbering also applies to VCF and does not repeat when importing an export', () => {
+    const result = importText(card('FN:Alice', 'TEL:0612345678', 'TEL:0712345678'), 'contacts.vcf');
+    assert.deepEqual(result.rows.map(r => r.nom), ['Alice I', 'Alice II']);
+    const bytes = book({ Contacts: [['Nom', 'Numéro'], ...result.rows.map(r => [r.nom, r.numero])] });
+    assert.deepEqual(importBook(bytes, 'contacts.xlsx').rows, result.rows);
+});
+
+test('unnamed contacts and names without a phone are not numbered', () => {
+    const result = importText('Nom,Telephone\n,0612345678\n,0712345678\nAlice,\nAlice,0612345678');
+    assert.deepEqual(result.rows.map(r => r.nom), ['Alice', 'Alice', 'Sans nom', 'Sans nom']);
+});
+
+test('Roman suffixes use IV, IX and X correctly', () => {
+    const app = loadApp();
+    assert.deepEqual([1,2,3,4,9,10,14].map(n => app.call('chiffresRomains', n)), ['I','II','III','IV','IX','X','XIV']);
 });
